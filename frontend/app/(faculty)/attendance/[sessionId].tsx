@@ -102,7 +102,7 @@ export default function LiveAttendanceScreen() {
       }
     },
     // Controlled 1-second (1000ms) polling interval while active
-    refetchInterval: (query) => {
+    refetchInterval: (query: any) => {
       const session = query.state.data;
       if (session && session.status !== 'ACTIVE') {
         return false;
@@ -296,8 +296,8 @@ export default function LiveAttendanceScreen() {
 
         <FlatList
           data={liveData?.students || []}
-          keyExtractor={(item) => item.studentId}
-          renderItem={({ item }) => (
+          keyExtractor={(item: any) => item.studentId}
+          renderItem={({ item }: { item: any }) => (
             <Card style={{ marginBottom: 10, padding: 12 }}>
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                 <View style={{ flex: 1 }}>
@@ -327,7 +327,7 @@ export default function LiveAttendanceScreen() {
       <FaceCameraModal
         visible={cameraVisible}
         onClose={() => setCameraVisible(false)}
-        onCapture={async (base64) => {
+        onCapture={async (base64: string) => {
           await verifyMutation.mutateAsync(base64);
         }}
         title="Verify Student Face"

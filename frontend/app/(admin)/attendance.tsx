@@ -104,10 +104,10 @@ export default function AdminAttendanceScreen() {
 
       <FlatList
         data={sessions}
-        keyExtractor={(item) => item.id}
+        keyExtractor={(item: AttendanceSessionDto) => item.id}
         contentContainerStyle={{ padding: 20 }}
         refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor="#6366f1" />}
-        renderItem={({ item }) => (
+        renderItem={({ item }: { item: AttendanceSessionDto }) => (
           <Card>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
               <View style={{ flex: 1 }}>

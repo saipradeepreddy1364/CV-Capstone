@@ -268,3 +268,13 @@ export interface ApiResponse<T> {
   data: T;
   errorCode?: string;
 }
+
+export interface FaceVerificationResultDto {
+  verified: boolean;
+  studentId?: string;
+  studentName?: string;
+  studentNumber?: string;
+  confidence?: number;
+  status?: AttendanceStatus;
+  message?: string;
+}

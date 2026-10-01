@@ -179,7 +179,7 @@ export default function StudentDashboardScreen() {
         </Text>
 
         {stats?.recentRecords && stats.recentRecords.length > 0 ? (
-          stats.recentRecords.slice(0, 5).map((r) => (
+          stats.recentRecords.slice(0, 5).map((r: any) => (
             <Card key={r.id} style={{ marginBottom: 10, padding: 12 }}>
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                 <View style={{ flex: 1 }}>

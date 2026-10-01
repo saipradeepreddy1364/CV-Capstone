@@ -124,7 +124,7 @@ export default function FacultyAttendanceScreen() {
       });
       return res.data.data;
     },
-    onSuccess: (newSession) => {
+    onSuccess: (newSession: any) => {
       queryClient.invalidateQueries({ queryKey: ['faculty_attendance_sessions'] });
       setModalVisible(false);
       router.push(`/(faculty)/attendance/${newSession.id}`);
@@ -140,7 +140,7 @@ export default function FacultyAttendanceScreen() {
       const res = await apiClient.post(`/attendance/sessions/${id}/start`);
       return res.data.data;
     },
-    onSuccess: (startedSession) => {
+    onSuccess: (startedSession: any) => {
       queryClient.invalidateQueries({ queryKey: ['faculty_attendance_sessions'] });
       router.push(`/(faculty)/attendance/${startedSession.id}`);
     },
@@ -172,9 +172,9 @@ export default function FacultyAttendanceScreen() {
 
         <FlatList
           data={sessions}
-          keyExtractor={(item) => item.id}
+          keyExtractor={(item: AttendanceSessionDto) => item.id}
           refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor="#6366f1" />}
-          renderItem={({ item }) => (
+          renderItem={({ item }: { item: AttendanceSessionDto }) => (
             <Card style={{ marginBottom: 14 }}>
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
                 <View style={{ flex: 1 }}>
@@ -293,7 +293,7 @@ export default function FacultyAttendanceScreen() {
             </Text>
 
             <View style={{ gap: 8, marginBottom: 16 }}>
-              {subjects.map((sub) => (
+              {subjects.map((sub: SubjectDto) => (
                 <TouchableOpacity
                   key={sub.id}
                   onPress={() => setSelectedSubjectId(sub.id)}
