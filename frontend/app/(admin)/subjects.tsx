@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { View, Text, FlatList, TextInput, TouchableOpacity, RefreshControl, Alert } from 'react-native';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '../../src/api/client';
+import { supabase } from '../../src/lib/supabase';
 import { SubjectDto, DepartmentDto, CourseDto } from '../../src/types';
 import { Header } from '../../src/components/Header';
 import { Card } from '../../src/components/Card';
@@ -18,23 +19,72 @@ export default function AdminSubjectsScreen() {
   const { data: subjects = [], isLoading, refetch, isRefetching } = useQuery<SubjectDto[]>({
     queryKey: ['subjects'],
     queryFn: async () => {
-      const res = await apiClient.get('/subjects');
-      return res.data.data;
+      try {
+        const { data, error } = await supabase.from('subjects').select('*, departments(name)');
+        if (!error && data && data.length > 0) {
+          return data.map((s: any) => ({
+            id: s.id,
+            name: s.name,
+            code: s.code,
+            credits: s.credits || 3,
+            departmentId: s.department_id,
+            departmentName: s.departments?.name || '',
+          }));
+        }
+      } catch (e) {}
+
+      try {
+        const res = await apiClient.get('/subjects');
+        return res.data.data;
+      } catch {
+        return [];
+      }
     },
   });
 
   const { data: departments = [] } = useQuery<DepartmentDto[]>({
     queryKey: ['departments'],
     queryFn: async () => {
-      const res = await apiClient.get('/departments');
-      return res.data.data;
+      try {
+        const { data, error } = await supabase.from('departments').select('*');
+        if (!error && data && data.length > 0) {
+          return data.map((d: any) => ({ id: d.id, name: d.name, code: d.code }));
+        }
+      } catch (e) {}
+
+      try {
+        const res = await apiClient.get('/departments');
+        return res.data.data;
+      } catch {
+        return [];
+      }
     },
   });
 
   const createMutation = useMutation({
     mutationFn: async (payload: { name: string; code: string; credits: number; departmentId: string }) => {
-      const res = await apiClient.post('/subjects', payload);
-      return res.data.data;
+      try {
+        const { data: orgs } = await supabase.from('organizations').select('id').limit(1);
+        const orgId = orgs && orgs.length > 0 ? orgs[0].id : null;
+
+        const insertPayload: any = {
+          name: payload.name,
+          code: payload.code,
+          credits: payload.credits || 3,
+        };
+        if (payload.departmentId) insertPayload.department_id = payload.departmentId;
+        if (orgId) insertPayload.organization_id = orgId;
+
+        const { data, error } = await supabase.from('subjects').insert([insertPayload]).select();
+        if (error) {
+          const res = await apiClient.post('/subjects', payload);
+          return res.data.data;
+        }
+        return data;
+      } catch {
+        const res = await apiClient.post('/subjects', payload);
+        return res.data.data;
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['subjects'] });
@@ -44,19 +94,24 @@ export default function AdminSubjectsScreen() {
       setDepartmentId('');
     },
     onError: (err: any) => {
-      Alert.alert('Error', err.response?.data?.message || 'Failed to create subject');
+      Alert.alert('Error', err.response?.data?.message || err.message || 'Failed to create subject');
     },
   });
 
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => {
-      await apiClient.delete(`/subjects/${id}`);
+      try {
+        await supabase.from('subjects').delete().eq('id', id);
+      } catch {}
+      try {
+        await apiClient.delete(`/subjects/${id}`);
+      } catch {}
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['subjects'] });
     },
     onError: (err: any) => {
-      Alert.alert('Error', err.response?.data?.message || 'Failed to delete subject');
+      Alert.alert('Error', err.response?.data?.message || err.message || 'Failed to delete subject');
     },
   });
 
