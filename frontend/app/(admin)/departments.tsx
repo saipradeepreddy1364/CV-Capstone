@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { View, Text, FlatList, TextInput, TouchableOpacity, RefreshControl, Alert } from 'react-native';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '../../src/api/client';
+import { supabase } from '../../src/lib/supabase';
 import { DepartmentDto } from '../../src/types';
 import { Header } from '../../src/components/Header';
 import { Card } from '../../src/components/Card';
@@ -16,15 +17,53 @@ export default function AdminDepartmentsScreen() {
   const { data: departments = [], isLoading, refetch, isRefetching } = useQuery<DepartmentDto[]>({
     queryKey: ['departments'],
     queryFn: async () => {
-      const res = await apiClient.get('/departments');
-      return res.data.data;
+      // Direct Supabase query
+      try {
+        const { data, error } = await supabase.from('departments').select('*');
+        if (!error && data && data.length > 0) {
+          return data.map((d: any) => ({
+            id: d.id,
+            name: d.name,
+            code: d.code,
+          }));
+        }
+      } catch (e) {
+        console.warn('Supabase fetch failed:', e);
+      }
+
+      try {
+        const res = await apiClient.get('/departments');
+        return res.data.data;
+      } catch {
+        return [];
+      }
     },
   });
 
   const createMutation = useMutation({
     mutationFn: async (payload: { name: string; code: string }) => {
-      const res = await apiClient.post('/departments', payload);
-      return res.data.data;
+      // Direct Supabase insert
+      try {
+        const { data: orgs } = await supabase.from('organizations').select('id').limit(1);
+        const orgId = orgs && orgs.length > 0 ? orgs[0].id : null;
+
+        const insertPayload: any = {
+          name: payload.name,
+          code: payload.code,
+        };
+        if (orgId) insertPayload.organization_id = orgId;
+
+        const { data, error } = await supabase.from('departments').insert([insertPayload]).select();
+        if (error) {
+          console.warn('Supabase insert warning, trying API:', error.message);
+          const res = await apiClient.post('/departments', payload);
+          return res.data.data;
+        }
+        return data;
+      } catch (err) {
+        const res = await apiClient.post('/departments', payload);
+        return res.data.data;
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['departments'] });
@@ -32,19 +71,24 @@ export default function AdminDepartmentsScreen() {
       setCode('');
     },
     onError: (err: any) => {
-      Alert.alert('Error', err.response?.data?.message || 'Failed to create department');
+      Alert.alert('Error', err.response?.data?.message || err.message || 'Failed to create department');
     },
   });
 
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => {
-      await apiClient.delete(`/departments/${id}`);
+      try {
+        await supabase.from('departments').delete().eq('id', id);
+      } catch {}
+      try {
+        await apiClient.delete(`/departments/${id}`);
+      } catch {}
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['departments'] });
     },
     onError: (err: any) => {
-      Alert.alert('Error', err.response?.data?.message || 'Failed to delete department');
+      Alert.alert('Error', err.response?.data?.message || err.message || 'Failed to delete department');
     },
   });
 

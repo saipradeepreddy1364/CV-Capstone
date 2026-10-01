@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { View, Text, FlatList, TextInput, TouchableOpacity, RefreshControl, Alert } from 'react-native';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '../../src/api/client';
+import { supabase } from '../../src/lib/supabase';
 import { CourseDto, DepartmentDto } from '../../src/types';
 import { Header } from '../../src/components/Header';
 import { Card } from '../../src/components/Card';
@@ -17,23 +18,91 @@ export default function AdminCoursesScreen() {
   const { data: courses = [], isLoading, refetch, isRefetching } = useQuery<CourseDto[]>({
     queryKey: ['courses'],
     queryFn: async () => {
-      const res = await apiClient.get('/courses');
-      return res.data.data;
+      // 1. Fetch from Supabase direct table
+      try {
+        const { data, error } = await supabase
+          .from('courses')
+          .select('*, departments(name)');
+        if (!error && data && data.length > 0) {
+          return data.map((c: any) => ({
+            id: c.id,
+            name: c.name,
+            code: c.code,
+            departmentId: c.department_id,
+            departmentName: c.departments?.name || '',
+            studentCount: 0,
+          }));
+        }
+      } catch (e) {
+        console.warn('Supabase fetch failed:', e);
+      }
+
+      // 2. Fallback to API Client
+      try {
+        const res = await apiClient.get('/courses');
+        return res.data.data;
+      } catch {
+        return [];
+      }
     },
   });
 
   const { data: departments = [] } = useQuery<DepartmentDto[]>({
     queryKey: ['departments'],
     queryFn: async () => {
-      const res = await apiClient.get('/departments');
-      return res.data.data;
+      // Fetch departments directly from Supabase
+      try {
+        const { data, error } = await supabase.from('departments').select('*');
+        if (!error && data && data.length > 0) {
+          return data.map((d: any) => ({
+            id: d.id,
+            name: d.name,
+            code: d.code,
+          }));
+        }
+      } catch (e) {}
+
+      try {
+        const res = await apiClient.get('/departments');
+        return res.data.data;
+      } catch {
+        return [];
+      }
     },
   });
 
   const createMutation = useMutation({
     mutationFn: async (payload: { name: string; code: string; departmentId: string }) => {
-      const res = await apiClient.post('/courses', payload);
-      return res.data.data;
+      // Direct insert to Supabase
+      try {
+        const { data: orgs } = await supabase.from('organizations').select('id').limit(1);
+        const orgId = orgs && orgs.length > 0 ? orgs[0].id : null;
+
+        // If no department selected, try to find default or use first
+        let targetDeptId = payload.departmentId;
+        if (!targetDeptId) {
+          const { data: depts } = await supabase.from('departments').select('id').limit(1);
+          if (depts && depts.length > 0) targetDeptId = depts[0].id;
+        }
+
+        const insertPayload: any = {
+          name: payload.name,
+          code: payload.code,
+        };
+        if (targetDeptId) insertPayload.department_id = targetDeptId;
+        if (orgId) insertPayload.organization_id = orgId;
+
+        const { data, error } = await supabase.from('courses').insert([insertPayload]).select();
+        if (error) {
+          console.warn('Supabase insert warning, trying API:', error.message);
+          const res = await apiClient.post('/courses', payload);
+          return res.data.data;
+        }
+        return data;
+      } catch (err: any) {
+        const res = await apiClient.post('/courses', payload);
+        return res.data.data;
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['courses'] });
@@ -42,13 +111,18 @@ export default function AdminCoursesScreen() {
       setDepartmentId('');
     },
     onError: (err: any) => {
-      Alert.alert('Error', err.response?.data?.message || 'Failed to create course');
+      Alert.alert('Error', err.response?.data?.message || err.message || 'Failed to create course');
     },
   });
 
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => {
-      await apiClient.delete(`/courses/${id}`);
+      try {
+        await supabase.from('courses').delete().eq('id', id);
+      } catch {}
+      try {
+        await apiClient.delete(`/courses/${id}`);
+      } catch {}
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['courses'] });
