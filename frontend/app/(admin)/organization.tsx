@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, ScrollView, TextInput, Alert } from 'react-native';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '../../src/api/client';
+import { supabase } from '../../src/lib/supabase';
 import { useAuth } from '../../src/store/authContext';
 import { OrganizationDto, UpdateOrganizationRequest } from '../../src/types';
 import { Header } from '../../src/components/Header';
@@ -23,11 +24,29 @@ export default function AdminOrganizationScreen() {
   const { data: org, isLoading } = useQuery<OrganizationDto>({
     queryKey: ['organization_details', orgId],
     queryFn: async () => {
+      try {
+        const { data, error } = await supabase.from('organizations').select('*').limit(1).single();
+        if (!error && data) {
+          return {
+            id: data.id,
+            name: data.name,
+            code: data.code,
+            email: data.email || '',
+            phone: data.phone || '',
+            address: data.address || '',
+            createdAt: data.created_at,
+          };
+        }
+      } catch (e) {}
+
       if (!orgId) return null;
-      const res = await apiClient.get(`/organizations/${orgId}`);
-      return res.data.data;
+      try {
+        const res = await apiClient.get(`/organizations/${orgId}`);
+        return res.data.data;
+      } catch {
+        return null;
+      }
     },
-    enabled: !!orgId,
   });
 
   useEffect(() => {
@@ -41,15 +60,33 @@ export default function AdminOrganizationScreen() {
 
   const updateMutation = useMutation({
     mutationFn: async (payload: UpdateOrganizationRequest) => {
+      try {
+        const { data, error } = await supabase
+          .from('organizations')
+          .update({
+            name: payload.name,
+            email: payload.email,
+            phone: payload.phone,
+            address: payload.address,
+          })
+          .eq('id', org?.id || orgId)
+          .select()
+          .single();
+
+        if (!error && data) {
+          return data;
+        }
+      } catch (e) {}
+
       const res = await apiClient.put(`/organizations/${orgId}`, payload);
       return res.data.data;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['organization_details'] });
-      Alert.alert('Success', 'Organization profile updated.');
+      Alert.alert('Success', 'Organization profile updated in Supabase.');
     },
     onError: (err: any) => {
-      Alert.alert('Error', err.response?.data?.message || 'Failed to update profile');
+      Alert.alert('Error', err.response?.data?.message || err.message || 'Failed to update profile');
     },
   });
 

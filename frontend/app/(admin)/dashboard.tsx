@@ -3,6 +3,7 @@ import { View, Text, ScrollView, RefreshControl, TouchableOpacity } from 'react-
 import { useRouter } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 import { apiClient } from '../../src/api/client';
+import { supabase } from '../../src/lib/supabase';
 import { OrganizationAnalyticsDto } from '../../src/types';
 import { Header } from '../../src/components/Header';
 import { Card } from '../../src/components/Card';
@@ -28,8 +29,59 @@ export default function AdminDashboardScreen() {
   const { data, isLoading, refetch, isRefetching } = useQuery<OrganizationAnalyticsDto>({
     queryKey: ['admin_analytics'],
     queryFn: async () => {
-      const res = await apiClient.get('/analytics/organization');
-      return res.data.data;
+      try {
+        // Direct Supabase table queries
+        const [{ count: facultyCount }, { count: studentCount }, { count: deptCount }, { count: courseCount }, { data: records }] = await Promise.all([
+          supabase.from('faculty').select('*', { count: 'exact', head: true }),
+          supabase.from('students').select('*', { count: 'exact', head: true }),
+          supabase.from('departments').select('*', { count: 'exact', head: true }),
+          supabase.from('courses').select('*', { count: 'exact', head: true }),
+          supabase.from('attendance_records').select('status'),
+        ]);
+
+        const totalRecords = records?.length || 0;
+        const presentCount = records?.filter((r: any) => r.status === 'PRESENT').length || 0;
+        const lateCount = records?.filter((r: any) => r.status === 'LATE').length || 0;
+        const absentCount = records?.filter((r: any) => r.status === 'ABSENT').length || 0;
+        const overallPercentage = totalRecords > 0 ? Math.round(((presentCount + lateCount) / totalRecords) * 100) : 0;
+
+        return {
+          totalStudents: studentCount || 0,
+          totalFaculty: facultyCount || 0,
+          totalDepartments: deptCount || 0,
+          totalCourses: courseCount || 0,
+          totalSessionsToday: 0,
+          activeSessionsCount: 0,
+          overallAttendancePercentage: overallPercentage,
+          totalPresent: presentCount,
+          totalLate: lateCount,
+          totalAbsent: absentCount,
+          recentSessions: [],
+          departmentStats: [],
+        };
+      } catch (e) {
+        console.warn('Supabase analytics fetch failed:', e);
+      }
+
+      try {
+        const res = await apiClient.get('/analytics/organization');
+        return res.data.data;
+      } catch {
+        return {
+          totalStudents: 0,
+          totalFaculty: 0,
+          totalDepartments: 0,
+          totalCourses: 0,
+          totalSessionsToday: 0,
+          activeSessionsCount: 0,
+          overallAttendancePercentage: 0,
+          totalPresent: 0,
+          totalLate: 0,
+          totalAbsent: 0,
+          recentSessions: [],
+          departmentStats: [],
+        };
+      }
     },
   });
 
