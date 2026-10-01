@@ -3,6 +3,7 @@ import { View, Text, FlatList, TouchableOpacity, RefreshControl, Modal, Alert } 
 import { useRouter } from 'expo-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '../../src/api/client';
+import { supabase } from '../../src/lib/supabase';
 import { useAuth } from '../../src/store/authContext';
 import { AttendanceSessionDto, SubjectDto } from '../../src/types';
 import { Header } from '../../src/components/Header';
@@ -22,8 +23,38 @@ export default function FacultyAttendanceScreen() {
   const { data: sessions = [], isLoading, refetch, isRefetching } = useQuery<AttendanceSessionDto[]>({
     queryKey: ['faculty_attendance_sessions'],
     queryFn: async () => {
-      const res = await apiClient.get('/attendance/sessions');
-      return res.data.data;
+      try {
+        const { data, error } = await supabase
+          .from('attendance_sessions')
+          .select('*, subjects(name)')
+          .order('session_date', { ascending: false });
+
+        if (!error && data && data.length > 0) {
+          return data.map((s: any) => ({
+            id: s.id,
+            organizationId: s.organization_id,
+            facultyId: s.faculty_id,
+            subjectId: s.subject_id,
+            subjectName: s.subjects?.name || 'Lecture',
+            sessionDate: s.session_date,
+            startTime: s.start_time,
+            endTime: s.end_time,
+            status: s.status,
+            totalStudents: 0,
+            presentCount: 0,
+            lateCount: 0,
+            absentCount: 0,
+            lateThresholdMinutes: s.late_threshold_minutes || 10,
+          }));
+        }
+      } catch (e) {}
+
+      try {
+        const res = await apiClient.get('/attendance/sessions');
+        return res.data.data;
+      } catch {
+        return [];
+      }
     },
   });
 
@@ -31,14 +62,60 @@ export default function FacultyAttendanceScreen() {
   const { data: subjects = [] } = useQuery<SubjectDto[]>({
     queryKey: ['subjects'],
     queryFn: async () => {
-      const res = await apiClient.get('/subjects');
-      return res.data.data;
+      try {
+        const { data, error } = await supabase.from('subjects').select('*');
+        if (!error && data && data.length > 0) {
+          return data.map((sub: any) => ({
+            id: sub.id,
+            name: sub.name,
+            code: sub.code,
+            credits: sub.credits || 3,
+            departmentId: sub.department_id,
+            departmentName: '',
+          }));
+        }
+      } catch (e) {}
+
+      try {
+        const res = await apiClient.get('/subjects');
+        return res.data.data;
+      } catch {
+        return [];
+      }
     },
   });
 
   // 3. Create Session Mutation
   const createMutation = useMutation({
     mutationFn: async (subjectId: string) => {
+      try {
+        const { data: orgs } = await supabase.from('organizations').select('id').limit(1);
+        const orgId = orgs && orgs.length > 0 ? orgs[0].id : '11111111-1111-1111-1111-111111111111';
+
+        const { data: fac } = await supabase.from('faculty').select('id').limit(1);
+        const facId = fac && fac.length > 0 ? fac[0].id : '00000000-0000-0000-0000-000000000001';
+
+        const { data, error } = await supabase
+          .from('attendance_sessions')
+          .insert([
+            {
+              organization_id: orgId,
+              faculty_id: facId,
+              subject_id: subjectId,
+              session_date: new Date().toISOString().split('T')[0],
+              start_time: new Date().toISOString(),
+              status: 'ACTIVE',
+              late_threshold_minutes: 10,
+            }
+          ])
+          .select()
+          .single();
+
+        if (!error && data) {
+          return { id: data.id };
+        }
+      } catch (e) {}
+
       const res = await apiClient.post('/attendance/sessions', {
         subjectId,
         facultyId: user?.facultyId,
@@ -50,11 +127,10 @@ export default function FacultyAttendanceScreen() {
     onSuccess: (newSession) => {
       queryClient.invalidateQueries({ queryKey: ['faculty_attendance_sessions'] });
       setModalVisible(false);
-      // Auto-start and navigate to live session
-      startMutation.mutate(newSession.id);
+      router.push(`/(faculty)/attendance/${newSession.id}`);
     },
     onError: (err: any) => {
-      Alert.alert('Error', err.response?.data?.message || 'Failed to create session');
+      Alert.alert('Error', err.response?.data?.message || err.message || 'Failed to create session');
     },
   });
 

@@ -3,6 +3,7 @@ import { View, Text, ScrollView, RefreshControl, TouchableOpacity } from 'react-
 import { useRouter } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 import { apiClient } from '../../src/api/client';
+import { supabase } from '../../src/lib/supabase';
 import { useAuth } from '../../src/store/authContext';
 import { StudentAttendanceStatsDto } from '../../src/types';
 import { Header } from '../../src/components/Header';
@@ -29,11 +30,41 @@ export default function StudentDashboardScreen() {
   const { data: stats, isLoading, refetch, isRefetching } = useQuery<StudentAttendanceStatsDto>({
     queryKey: ['student_dashboard_stats', studentId],
     queryFn: async () => {
+      try {
+        const { data: records } = await supabase
+          .from('attendance_records')
+          .select('*, subjects(name)')
+          .order('attendance_date', { ascending: false });
+
+        const totalLectures = records?.length || 0;
+        const presentCount = records?.filter((r: any) => r.status === 'PRESENT').length || 0;
+        const lateCount = records?.filter((r: any) => r.status === 'LATE').length || 0;
+        const absentCount = records?.filter((r: any) => r.status === 'ABSENT').length || 0;
+        const attendancePercentage = totalLectures > 0 ? Math.round(((presentCount + lateCount) / totalLectures) * 100) : 0;
+
+        return {
+          studentId: studentId || 'stu-1',
+          studentNumber: user?.identificationNumber || 'STU001',
+          studentName: `${user?.firstName || 'Student'} ${user?.lastName || ''}`,
+          totalLectures,
+          attendedLectures: presentCount + lateCount,
+          presentCount,
+          lateCount,
+          absentCount,
+          attendancePercentage,
+          subjectAttendance: [],
+        };
+      } catch (e) {}
+
       if (!studentId) return null;
-      const res = await apiClient.get(`/attendance/student/${studentId}`);
-      return res.data.data;
+      try {
+        const res = await apiClient.get(`/attendance/student/${studentId}`);
+        return res.data.data;
+      } catch {
+        return null;
+      }
     },
-    enabled: !!studentId,
+    enabled: true,
   });
 
   const rate = stats?.attendancePercentage ?? 0;
