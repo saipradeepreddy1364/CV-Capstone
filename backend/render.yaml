@@ -1,0 +1,26 @@
+services:
+  - type: web
+    name: smart-attendance-backend
+    env: java
+    region: oregon
+    plan: free
+    buildCommand: mvn clean package -DskipTests
+    startCommand: java -Dserver.port=$PORT -jar target/smart-attendance-backend-1.0.0.jar
+    healthCheckPath: /api/health
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: DATABASE_USERNAME
+        sync: false
+      - key: DATABASE_PASSWORD
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: JWT_SECRET
+        generateValue: true
+      - key: FACE_MATCH_THRESHOLD
+        value: "0.75"
+      - key: FRONTEND_URL
+        sync: false
