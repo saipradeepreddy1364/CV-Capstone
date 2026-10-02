@@ -279,3 +279,43 @@ export interface FaceVerificationResultDto {
   status?: AttendanceStatus;
   message?: string;
 }
+
+export interface CreateFacultyRequest {
+  firstName: string;
+  lastName: string;
+  email: string;
+  phone?: string;
+  facultyNumber: string;
+  designation?: string;
+  departmentId?: string;
+  password?: string;
+}
+
+export interface CreateStudentRequest {
+  firstName: string;
+  lastName: string;
+  email: string;
+  phone?: string;
+  studentNumber: string;
+  rollNumber?: string;
+  departmentId?: string;
+  courseId?: string;
+  batchYear?: string;
+  semester?: string;
+  password?: string;
+}
+
+export interface UpdateOrganizationRequest {
+  name?: string;
+  email?: string;
+  phone?: string;
+  address?: string;
+}
+
+export interface UpdateAttendanceSettingsRequest {
+  thresholdMinutes?: number;
+  lateEnabled?: boolean;
+  lateStatus?: string;
+  minimumRecognitionConfidence?: number;
+  sessionDurationMinutes?: number;
+}

@@ -10,7 +10,7 @@ interface AuthContextType {
   role: RoleType | null;
   token: string | null;
   isLoading: boolean;
-  login: (email: string, password: string) => Promise<void>;
+  login: (email: string, password: string, expectedRole?: RoleType) => Promise<void>;
   register: (payload: {
     email: string;
     password?: string;
@@ -18,6 +18,9 @@ interface AuthContextType {
     lastName: string;
     role: RoleType;
     organizationName?: string;
+    identificationNumber?: string;
+    designation?: string;
+    batchYear?: string;
   }) => Promise<void>;
   logout: () => Promise<void>;
   refreshUser: () => Promise<void>;
@@ -61,7 +64,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const login = async (email: string, password: string) => {
+  const login = async (email: string, password: string, expectedRole?: RoleType) => {
     const cleanEmail = email.toLowerCase().trim();
     if (!cleanEmail) throw new Error('Please enter your email address');
 
@@ -78,6 +81,27 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
 
       if (userRow) {
+        // Enforce role portal boundaries if an expected role is specified
+        if (expectedRole && userRow.role !== expectedRole) {
+          const roleLabels: Record<string, string> = {
+            ORGANIZATION_ADMIN: 'Organization Admin',
+            FACULTY: 'Faculty Member',
+            STUDENT: 'Student',
+          };
+          const actualLabel = roleLabels[userRow.role] || userRow.role;
+          const expectedLabel = roleLabels[expectedRole] || expectedRole;
+          throw new Error(`Role Mismatch: This account belongs to a ${actualLabel}. Please switch to the "${expectedLabel === 'Organization Admin' ? 'Admin' : expectedLabel}" portal tab.`);
+        }
+
+        // Check password if set
+        if (userRow.password_hash && password && userRow.password_hash !== 'placeholder_hash') {
+          if (!userRow.password_hash.startsWith('$2a$') && !userRow.password_hash.startsWith('$2b$')) {
+            if (userRow.password_hash !== password) {
+              throw new Error('Incorrect password. Please verify your credentials or contact your administrator.');
+            }
+          }
+        }
+
         // Fetch role specific associations
         let facultyId: string | undefined = undefined;
         let studentId: string | undefined = undefined;
@@ -122,12 +146,25 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
     } catch (e: any) {
       console.warn('Supabase login check:', e.message);
+      if (e.message && e.message.startsWith('Role Mismatch:')) {
+        throw e;
+      }
     }
 
     // 2. Try backend login API if configured
     try {
       const res = await apiClient.post('/auth/login', { email: cleanEmail, password });
       const { accessToken, refreshToken, user: authUser } = res.data.data;
+
+      if (expectedRole && authUser.role !== expectedRole) {
+        const roleLabels: Record<string, string> = {
+          ORGANIZATION_ADMIN: 'Organization Admin',
+          FACULTY: 'Faculty Member',
+          STUDENT: 'Student',
+        };
+        const actualLabel = roleLabels[authUser.role] || authUser.role;
+        throw new Error(`Role Mismatch: This account belongs to a ${actualLabel}.`);
+      }
 
       await storage.setItem('smart_attendance_access_token', accessToken);
       await storage.setItem('smart_attendance_refresh_token', refreshToken);
@@ -138,8 +175,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       navigateByRole(authUser.role);
       return;
     } catch (err: any) {
-      // If no user found in Supabase or backend
-      throw new Error(`No account found for "${cleanEmail}" in your Supabase database. Please create a user or register.`);
+      if (err.message && err.message.startsWith('Role Mismatch:')) {
+        throw err;
+      }
+      throw new Error(`No account found for "${cleanEmail}" in your Supabase database. Please check your credentials or register.`);
     }
   };
 
@@ -150,7 +189,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     lastName: string;
     role: RoleType;
     organizationName?: string;
+    identificationNumber?: string;
+    designation?: string;
+    batchYear?: string;
   }) => {
+    if (payload.role !== 'ORGANIZATION_ADMIN') {
+      throw new Error('Faculty and Student accounts can only be provisioned by your Institution Administrator. Please ask your administrator to register you from the Admin Portal.');
+    }
+
     const cleanEmail = payload.email.toLowerCase().trim();
 
     // Ensure organization exists in Supabase
@@ -188,33 +234,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       throw new Error(userErr?.message || 'Failed to create user in Supabase');
     }
 
-    let facultyId: string | undefined = undefined;
-    let studentId: string | undefined = undefined;
-
-    if (payload.role === 'FACULTY') {
-      const { data: fac } = await supabase.from('faculty').insert([
-        {
-          organization_id: orgId,
-          user_id: newUser.id,
-          faculty_number: 'FAC_' + Math.floor(100 + Math.random() * 900),
-          designation: 'Professor',
-        },
-      ]).select().single();
-      if (fac) facultyId = fac.id;
-    } else if (payload.role === 'STUDENT') {
-      const { data: std } = await supabase.from('students').insert([
-        {
-          organization_id: orgId,
-          user_id: newUser.id,
-          student_number: 'STU_' + Math.floor(1000 + Math.random() * 9000),
-          batch_year: '2024',
-          semester: '1',
-          has_face_registered: false,
-        },
-      ]).select().single();
-      if (std) studentId = std.id;
-    }
-
     const authUser: UserDto = {
       id: newUser.id,
       organizationId: orgId,
@@ -223,8 +242,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       lastName: newUser.last_name,
       fullName: `${newUser.first_name} ${newUser.last_name}`.trim(),
       role: newUser.role as RoleType,
-      facultyId,
-      studentId,
       isActive: true,
     };
 

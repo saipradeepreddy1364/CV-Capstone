@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '../../src/api/client';
+import { supabase } from '../../src/lib/supabase';
 import { useAuth } from '../../src/store/authContext';
 import { FacultyDto, DepartmentDto, CreateFacultyRequest } from '../../src/types';
 import { Header } from '../../src/components/Header';
@@ -100,10 +101,10 @@ export default function AdminFacultyScreen() {
         const { data: userRow, error: userError } = await supabase.from('users').insert([
           {
             organization_id: actualOrgId,
-            email: payload.email,
-            password_hash: 'placeholder_hash',
-            first_name: payload.firstName,
-            last_name: payload.lastName,
+            email: payload.email.toLowerCase().trim(),
+            password_hash: payload.password || 'Faculty@123',
+            first_name: payload.firstName.trim(),
+            last_name: payload.lastName.trim(),
             phone: payload.phone,
             role: 'FACULTY',
             is_active: true,
@@ -359,6 +360,17 @@ export default function AdminFacultyScreen() {
                   placeholderTextColor="#475569"
                   autoCapitalize="none"
                   keyboardType="email-address"
+                  style={{ backgroundColor: '#0f172a', color: '#f8fafc', padding: 10, borderRadius: 8, borderWidth: 1, borderColor: '#334155' }}
+                />
+              </View>
+
+              <View>
+                <Text style={{ color: '#94a3b8', fontSize: 11, fontWeight: '700', marginBottom: 4 }}>INITIAL LOGIN PASSWORD *</Text>
+                <TextInput
+                  value={password}
+                  onChangeText={setPassword}
+                  placeholder="e.g. Faculty@123"
+                  placeholderTextColor="#475569"
                   style={{ backgroundColor: '#0f172a', color: '#f8fafc', padding: 10, borderRadius: 8, borderWidth: 1, borderColor: '#334155' }}
                 />
               </View>
