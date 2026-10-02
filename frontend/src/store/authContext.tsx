@@ -16,11 +16,8 @@ interface AuthContextType {
     password?: string;
     firstName: string;
     lastName: string;
-    role: RoleType;
+    role?: RoleType;
     organizationName?: string;
-    identificationNumber?: string;
-    designation?: string;
-    batchYear?: string;
   }) => Promise<void>;
   logout: () => Promise<void>;
   refreshUser: () => Promise<void>;
@@ -187,16 +184,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     password?: string;
     firstName: string;
     lastName: string;
-    role: RoleType;
+    role?: RoleType;
     organizationName?: string;
-    identificationNumber?: string;
-    designation?: string;
-    batchYear?: string;
   }) => {
-    if (payload.role !== 'ORGANIZATION_ADMIN') {
-      throw new Error('Faculty and Student accounts can only be provisioned by your Institution Administrator. Please ask your administrator to register you from the Admin Portal.');
-    }
-
     const cleanEmail = payload.email.toLowerCase().trim();
 
     // Ensure organization exists in Supabase
@@ -213,7 +203,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (newOrg) orgId = newOrg.id;
     }
 
-    // Insert user into Supabase
+    // Insert admin user into Supabase
     const { data: newUser, error: userErr } = await supabase
       .from('users')
       .insert([
@@ -223,7 +213,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           password_hash: payload.password || 'default_hash',
           first_name: payload.firstName,
           last_name: payload.lastName,
-          role: payload.role,
+          role: 'ORGANIZATION_ADMIN',
           is_active: true,
         },
       ])
