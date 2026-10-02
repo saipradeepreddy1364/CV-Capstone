@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import { useRouter, useSegments } from 'expo-router';
 import { storage } from '../lib/storage';
 import { apiClient } from '../api/client';
+import { supabase } from '../lib/supabase';
 import { UserDto, RoleType } from '../types';
 
 interface AuthContextType {

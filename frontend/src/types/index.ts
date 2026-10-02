@@ -17,6 +17,7 @@ export interface UserDto {
   facultyId?: string;
   studentId?: string;
   identificationNumber?: string;
+  isActive?: boolean;
 }
 
 export interface AuthResponse {
