@@ -2,6 +2,7 @@ import React from 'react';
 import { View, Text, FlatList, RefreshControl } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
 import { apiClient } from '../../src/api/client';
+import { supabase } from '../../src/lib/supabase';
 import { AuditLogDto } from '../../src/types';
 import { Header } from '../../src/components/Header';
 import { Card } from '../../src/components/Card';
@@ -11,8 +12,32 @@ export default function AdminAuditLogsScreen() {
   const { data: logs = [], isLoading, refetch, isRefetching } = useQuery<AuditLogDto[]>({
     queryKey: ['audit_logs'],
     queryFn: async () => {
-      const res = await apiClient.get('/audit-logs');
-      return res.data.data;
+      try {
+        const { data, error } = await supabase
+          .from('audit_logs')
+          .select('*')
+          .order('created_at', { ascending: false })
+          .limit(50);
+        if (!error && data) {
+          return data.map((l: any) => ({
+            id: l.id,
+            action: l.action || 'AUDIT_EVENT',
+            entity: l.entity || 'SYSTEM',
+            entityId: l.entity_id || '',
+            userId: l.user_id || '',
+            organizationId: l.organization_id || '',
+            ipAddress: l.ip_address || '127.0.0.1',
+            createdAt: l.created_at || new Date().toISOString(),
+          }));
+        }
+      } catch (e) {}
+
+      try {
+        const res = await apiClient.get('/audit-logs');
+        return res.data.data || [];
+      } catch {
+        return [];
+      }
     },
   });
 
@@ -32,7 +57,7 @@ export default function AdminAuditLogsScreen() {
                 <View
                   style={{
                     backgroundColor:
-                      item.action.includes('VERIFICATION') || item.action.includes('REGISTRATION')
+                      (item.action || '').includes('VERIFICATION') || (item.action || '').includes('REGISTRATION')
                         ? 'rgba(16, 185, 129, 0.15)'
                         : 'rgba(99, 102, 241, 0.15)',
                     paddingHorizontal: 8,
@@ -44,7 +69,7 @@ export default function AdminAuditLogsScreen() {
                   <Text
                     style={{
                       color:
-                        item.action.includes('VERIFICATION') || item.action.includes('REGISTRATION')
+                        (item.action || '').includes('VERIFICATION') || (item.action || '').includes('REGISTRATION')
                           ? '#10b981'
                           : '#818cf8',
                       fontSize: 11,

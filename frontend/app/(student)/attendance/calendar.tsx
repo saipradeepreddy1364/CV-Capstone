@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, RefreshControl } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
 import { apiClient } from '../../../src/api/client';
+import { supabase } from '../../../src/lib/supabase';
 import { useAuth } from '../../../src/store/authContext';
 import { StudentAttendanceStatsDto, AttendanceRecordDto } from '../../../src/types';
 import { Header } from '../../../src/components/Header';
@@ -23,8 +24,47 @@ export default function StudentAttendanceCalendarScreen() {
     queryKey: ['student_calendar_records', studentId],
     queryFn: async () => {
       if (!studentId) return null;
-      const res = await apiClient.get(`/attendance/student/${studentId}`);
-      return res.data.data;
+      try {
+        const { data: recs } = await supabase
+          .from('attendance_records')
+          .select('*, attendance_sessions(session_date, start_time, end_time, subjects(name, code))')
+          .eq('student_id', studentId);
+
+        if (recs) {
+          const recentRecords = recs.map((r: any) => ({
+            id: r.id,
+            sessionId: r.attendance_session_id,
+            studentId: r.student_id,
+            attendanceDate: r.attendance_sessions?.session_date || r.created_at?.split('T')[0] || today.toISOString().split('T')[0],
+            subjectName: r.attendance_sessions?.subjects?.name || 'Class',
+            subjectCode: r.attendance_sessions?.subjects?.code || 'SUB',
+            status: r.status,
+            checkInTime: r.check_in_time,
+          }));
+
+          const total = recs.length;
+          const present = recs.filter((r: any) => r.status === 'PRESENT' || r.status === 'LATE').length;
+          const percentage = total > 0 ? Math.round((present / total) * 100) : 100;
+
+          return {
+            studentId,
+            studentName: user?.fullName || 'Student',
+            studentNumber: user?.identificationNumber || '',
+            totalClasses: total,
+            attendedClasses: present,
+            attendancePercentage: percentage,
+            recentRecords,
+            subjectBreakdown: [],
+          };
+        }
+      } catch (e) {}
+
+      try {
+        const res = await apiClient.get(`/attendance/student/${studentId}`);
+        return res.data.data;
+      } catch {
+        return null;
+      }
     },
     enabled: !!studentId,
   });

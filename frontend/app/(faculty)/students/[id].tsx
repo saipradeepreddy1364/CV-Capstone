@@ -3,6 +3,7 @@ import { View, Text, ScrollView, RefreshControl } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 import { apiClient } from '../../../src/api/client';
+import { supabase } from '../../../src/lib/supabase';
 import { StudentAttendanceStatsDto } from '../../../src/types';
 import { Header } from '../../../src/components/Header';
 import { Card } from '../../../src/components/Card';
@@ -16,8 +17,40 @@ export default function FacultyStudentDetailScreen() {
   const { data: stats, isLoading, refetch, isRefetching } = useQuery<StudentAttendanceStatsDto>({
     queryKey: ['student_attendance_stats', id],
     queryFn: async () => {
-      const res = await apiClient.get(`/attendance/student/${id}`);
-      return res.data.data;
+      try {
+        const { data: std } = await supabase
+          .from('students')
+          .select('*, users(first_name, last_name, email)')
+          .eq('id', id)
+          .maybeSingle();
+
+        const { data: recs } = await supabase
+          .from('attendance_records')
+          .select('status')
+          .eq('student_id', id);
+
+        if (std) {
+          const total = recs?.length || 0;
+          const present = recs?.filter((r: any) => r.status === 'PRESENT' || r.status === 'LATE').length || 0;
+          const percentage = total > 0 ? Math.round((present / total) * 100) : 100;
+          return {
+            studentId: std.id,
+            studentName: std.users ? `${std.users.first_name || ''} ${std.users.last_name || ''}`.trim() : 'Student',
+            studentNumber: std.student_number || '',
+            totalClasses: total,
+            attendedClasses: present,
+            attendancePercentage: percentage,
+            subjectBreakdown: [],
+          };
+        }
+      } catch (e) {}
+
+      try {
+        const res = await apiClient.get(`/attendance/student/${id}`);
+        return res.data.data;
+      } catch {
+        return null;
+      }
     },
     enabled: !!id,
   });

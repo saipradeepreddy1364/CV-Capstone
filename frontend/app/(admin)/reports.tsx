@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
 import { apiClient } from '../../src/api/client';
+import { supabase } from '../../src/lib/supabase';
 import { AttendanceRecordDto, AttendanceStatus } from '../../src/types';
 import { Header } from '../../src/components/Header';
 import { Card } from '../../src/components/Card';
@@ -23,10 +24,38 @@ export default function AdminReportsScreen() {
   const { data: records = [], isLoading, refetch, isRefetching } = useQuery<AttendanceRecordDto[]>({
     queryKey: ['attendance_reports', statusFilter],
     queryFn: async () => {
-      const params: any = {};
-      if (statusFilter) params.status = statusFilter;
-      const res = await apiClient.get('/attendance/reports', { params });
-      return res.data.data;
+      try {
+        let query = supabase
+          .from('attendance_records')
+          .select('*, students(student_number, users(first_name, last_name, email))')
+          .order('timestamp', { ascending: false });
+        if (statusFilter) {
+          query = query.eq('status', statusFilter);
+        }
+        const { data, error } = await query;
+        if (!error && data) {
+          return data.map((r: any) => ({
+            id: r.id,
+            sessionId: r.session_id,
+            studentId: r.student_id,
+            studentName: r.students?.users ? `${r.students.users.first_name || ''} ${r.students.users.last_name || ''}`.trim() : 'Student',
+            studentNumber: r.students?.student_number || '',
+            status: r.status,
+            verificationConfidence: r.verification_confidence,
+            isFlagged: r.is_flagged || false,
+            timestamp: r.timestamp || r.created_at,
+          }));
+        }
+      } catch (e) {}
+
+      try {
+        const params: any = {};
+        if (statusFilter) params.status = statusFilter;
+        const res = await apiClient.get('/attendance/reports', { params });
+        return res.data.data || [];
+      } catch {
+        return [];
+      }
     },
   });
 
