@@ -120,6 +120,8 @@ export default function AdminFacultyScreen() {
         const { data: orgs } = await supabase.from('organizations').select('id').limit(1);
         const actualOrgId = orgs && orgs.length > 0 ? orgs[0].id : orgId;
 
+        let targetUserId: string | null = null;
+
         const { data: userRow, error: userError } = await supabase.from('users').insert([
           {
             organization_id: actualOrgId,
@@ -133,19 +135,49 @@ export default function AdminFacultyScreen() {
           }
         ]).select().single();
 
-        if (userError) {
-          console.warn('User insert error in Supabase:', userError);
-          if (userError.code === '23505' || userError.message?.toLowerCase().includes('duplicate') || userError.message?.toLowerCase().includes('unique')) {
-            throw new Error('A user with this email address already exists.');
+        if (userRow) {
+          targetUserId = userRow.id;
+        } else if (userError) {
+          console.warn('User insert warning, checking existing user:', userError);
+          // If user already exists in users table, find and update them
+          const { data: existingUser } = await supabase
+            .from('users')
+            .select('*')
+            .eq('email', payload.email.toLowerCase().trim())
+            .maybeSingle();
+
+          if (existingUser) {
+            // Check if they already have an active faculty entry
+            const { data: existingFac } = await supabase
+              .from('faculty')
+              .select('id')
+              .eq('user_id', existingUser.id)
+              .maybeSingle();
+
+            if (existingFac) {
+              throw new Error('A faculty member with this email address already exists.');
+            }
+
+            // Update existing user with entered name and faculty role
+            await supabase.from('users').update({
+              first_name: payload.firstName.trim(),
+              last_name: payload.lastName.trim(),
+              phone: payload.phone || null,
+              role: 'FACULTY',
+              is_active: true,
+            }).eq('id', existingUser.id);
+
+            targetUserId = existingUser.id;
+          } else {
+            throw new Error(userError.message || 'Failed to create user account');
           }
-          throw new Error(userError.message || 'Failed to create user account');
         }
 
-        if (userRow) {
+        if (targetUserId) {
           const { data: facRow, error: facError } = await supabase.from('faculty').insert([
             {
               organization_id: actualOrgId,
-              user_id: userRow.id,
+              user_id: targetUserId,
               faculty_number: payload.facultyNumber.trim(),
               designation: payload.designation,
               department_id: payload.departmentId || null,

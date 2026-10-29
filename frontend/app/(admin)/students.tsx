@@ -152,9 +152,10 @@ export default function AdminStudentsScreen() {
   const createMutation = useMutation({
     mutationFn: async (payload: CreateStudentRequest) => {
       try {
-        // Create user in users table
         const { data: orgs } = await supabase.from('organizations').select('id').limit(1);
         const actualOrgId = orgs && orgs.length > 0 ? orgs[0].id : orgId;
+
+        let targetUserId: string | null = null;
 
         const { data: userRow, error: userError } = await supabase.from('users').insert([
           {
@@ -168,19 +169,45 @@ export default function AdminStudentsScreen() {
           }
         ]).select().single();
 
-        if (userError) {
-          console.warn('User insert error in Supabase:', userError);
-          if (userError.code === '23505' || userError.message?.toLowerCase().includes('duplicate') || userError.message?.toLowerCase().includes('unique')) {
-            throw new Error('A user with this email address already exists.');
+        if (userRow) {
+          targetUserId = userRow.id;
+        } else if (userError) {
+          console.warn('User insert warning, checking existing user:', userError);
+          const { data: existingUser } = await supabase
+            .from('users')
+            .select('*')
+            .eq('email', payload.email.toLowerCase().trim())
+            .maybeSingle();
+
+          if (existingUser) {
+            const { data: existingStd } = await supabase
+              .from('students')
+              .select('id')
+              .eq('user_id', existingUser.id)
+              .maybeSingle();
+
+            if (existingStd) {
+              throw new Error('A student with this email address already exists.');
+            }
+
+            await supabase.from('users').update({
+              first_name: payload.firstName.trim(),
+              last_name: payload.lastName.trim(),
+              role: 'STUDENT',
+              is_active: true,
+            }).eq('id', existingUser.id);
+
+            targetUserId = existingUser.id;
+          } else {
+            throw new Error(userError.message || 'Failed to create user account');
           }
-          throw new Error(userError.message || 'Failed to create user account');
         }
 
-        if (userRow) {
+        if (targetUserId) {
           const { data: studentRow, error: studentError } = await supabase.from('students').insert([
             {
               organization_id: actualOrgId,
-              user_id: userRow.id,
+              user_id: targetUserId,
               student_number: payload.studentNumber.trim(),
               batch_year: payload.batchYear,
               semester: payload.semester,
