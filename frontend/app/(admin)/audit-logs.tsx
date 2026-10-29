@@ -16,7 +16,7 @@ export default function AdminAuditLogsScreen() {
         const { data, error } = await supabase
           .from('audit_logs')
           .select('*')
-          .order('created_at', { ascending: false })
+          .order('timestamp', { ascending: false })
           .limit(50);
         if (!error && data) {
           return data.map((l: any) => ({
@@ -27,7 +27,7 @@ export default function AdminAuditLogsScreen() {
             userId: l.user_id || '',
             organizationId: l.organization_id || '',
             ipAddress: l.ip_address || '127.0.0.1',
-            createdAt: l.created_at || new Date().toISOString(),
+            createdAt: l.timestamp || l.created_at || new Date().toISOString(),
           }));
         }
       } catch (e) {}

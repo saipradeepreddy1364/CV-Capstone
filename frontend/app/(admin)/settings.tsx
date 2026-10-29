@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, ScrollView, TextInput, Switch, Alert } from 'react-native';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '../../src/api/client';
+import { supabase } from '../../src/lib/supabase';
+import { useAuth } from '../../src/store/authContext';
 import { AttendanceSettingsDto, UpdateAttendanceSettingsRequest } from '../../src/types';
 import { Header } from '../../src/components/Header';
 import { Card } from '../../src/components/Card';
@@ -10,6 +12,7 @@ import { Sliders, Shield, Clock, Save } from 'lucide-react-native';
 
 export default function AdminSettingsScreen() {
   const queryClient = useQueryClient();
+  const { user } = useAuth();
 
   const [thresholdMinutes, setThresholdMinutes] = useState<string>('10');
   const [lateEnabled, setLateEnabled] = useState<boolean>(true);
@@ -19,8 +22,35 @@ export default function AdminSettingsScreen() {
   const { data: settings, isLoading } = useQuery<AttendanceSettingsDto>({
     queryKey: ['attendance_settings'],
     queryFn: async () => {
-      const res = await apiClient.get('/attendance/settings');
-      return res.data.data;
+      try {
+        const { data, error } = await supabase.from('attendance_settings').select('*').limit(1).maybeSingle();
+        if (!error && data) {
+          return {
+            id: data.id,
+            organizationId: data.organization_id,
+            thresholdMinutes: data.threshold_minutes ?? 10,
+            lateEnabled: data.late_enabled ?? true,
+            lateStatus: data.late_status || 'LATE',
+            minimumRecognitionConfidence: data.minimum_recognition_confidence ?? 0.75,
+            sessionDurationMinutes: data.session_duration_minutes ?? 60,
+          };
+        }
+      } catch (e) {}
+
+      try {
+        const res = await apiClient.get('/attendance/settings');
+        return res.data.data;
+      } catch {
+        return {
+          id: 'default',
+          organizationId: user?.organizationId || '',
+          thresholdMinutes: 10,
+          lateEnabled: true,
+          lateStatus: 'LATE',
+          minimumRecognitionConfidence: 0.75,
+          sessionDurationMinutes: 60,
+        };
+      }
     },
   });
 
@@ -35,6 +65,30 @@ export default function AdminSettingsScreen() {
 
   const updateMutation = useMutation({
     mutationFn: async (payload: UpdateAttendanceSettingsRequest) => {
+      try {
+        const { data: orgs } = await supabase.from('organizations').select('id').limit(1);
+        const orgId = orgs && orgs.length > 0 ? orgs[0].id : user?.organizationId;
+
+        const updateData: any = {
+          threshold_minutes: payload.thresholdMinutes,
+          late_enabled: payload.lateEnabled,
+          late_status: payload.lateStatus || 'LATE',
+          minimum_recognition_confidence: payload.minimumRecognitionConfidence,
+          session_duration_minutes: payload.sessionDurationMinutes,
+          updated_at: new Date().toISOString(),
+        };
+
+        const { data: existing } = await supabase.from('attendance_settings').select('id').limit(1).maybeSingle();
+        if (existing) {
+          const { data, error } = await supabase.from('attendance_settings').update(updateData).eq('id', existing.id).select().single();
+          if (!error && data) return data;
+        } else if (orgId) {
+          updateData.organization_id = orgId;
+          const { data, error } = await supabase.from('attendance_settings').insert([updateData]).select().single();
+          if (!error && data) return data;
+        }
+      } catch (e) {}
+
       const res = await apiClient.put('/attendance/settings', payload);
       return res.data.data;
     },
@@ -43,7 +97,7 @@ export default function AdminSettingsScreen() {
       Alert.alert('Saved', 'Attendance policies updated successfully.');
     },
     onError: (err: any) => {
-      Alert.alert('Error', err.response?.data?.message || 'Failed to update settings');
+      Alert.alert('Error', err.response?.data?.message || err.message || 'Failed to update settings');
     },
   });
 

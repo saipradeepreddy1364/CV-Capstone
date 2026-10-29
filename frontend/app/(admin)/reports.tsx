@@ -28,7 +28,7 @@ export default function AdminReportsScreen() {
         let query = supabase
           .from('attendance_records')
           .select('*, students(student_number, users(first_name, last_name, email))')
-          .order('timestamp', { ascending: false });
+          .order('created_at', { ascending: false });
         if (statusFilter) {
           query = query.eq('status', statusFilter);
         }
@@ -36,14 +36,14 @@ export default function AdminReportsScreen() {
         if (!error && data) {
           return data.map((r: any) => ({
             id: r.id,
-            sessionId: r.session_id,
+            sessionId: r.attendance_session_id || r.session_id,
             studentId: r.student_id,
             studentName: r.students?.users ? `${r.students.users.first_name || ''} ${r.students.users.last_name || ''}`.trim() : 'Student',
             studentNumber: r.students?.student_number || '',
             status: r.status,
-            verificationConfidence: r.verification_confidence,
+            verificationConfidence: r.recognition_confidence ?? r.verification_confidence ?? 0.95,
             isFlagged: r.is_flagged || false,
-            timestamp: r.timestamp || r.created_at,
+            timestamp: r.check_in_time || r.created_at || new Date().toISOString(),
           }));
         }
       } catch (e) {}

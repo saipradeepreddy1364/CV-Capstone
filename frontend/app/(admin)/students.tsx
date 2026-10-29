@@ -45,12 +45,13 @@ export default function AdminStudentsScreen() {
       try {
         const { data, error } = await supabase
           .from('students')
-          .select('*, users(first_name, last_name, email), departments(name), courses(name)');
+          .select('*, users(first_name, last_name, email), departments(name), courses(name), face_profiles(id)');
         if (!error && data) {
           return data.map((s: any) => {
             const first = s.users?.first_name || '';
             const last = s.users?.last_name || '';
             const fullName = `${first} ${last}`.trim() || s.users?.email || 'Student';
+            const hasFace = Array.isArray(s.face_profiles) ? s.face_profiles.length > 0 : !!s.face_profiles;
             return {
               id: s.id,
               userId: s.user_id,
@@ -62,8 +63,8 @@ export default function AdminStudentsScreen() {
               departmentName: s.departments?.name || '',
               courseId: s.course_id,
               courseName: s.courses?.name || '',
-              hasFaceRegistered: s.has_face_registered || false,
-              faceRegistered: s.has_face_registered || false,
+              hasFaceRegistered: hasFace,
+              faceRegistered: hasFace,
               firstName: first,
               lastName: last,
               fullName: fullName,
@@ -204,18 +205,21 @@ export default function AdminStudentsScreen() {
         }
 
         if (targetUserId) {
-          const { data: studentRow, error: studentError } = await supabase.from('students').insert([
-            {
-              organization_id: actualOrgId,
-              user_id: targetUserId,
-              student_number: payload.studentNumber.trim(),
-              batch_year: payload.batchYear,
-              semester: payload.semester,
-              department_id: payload.departmentId || null,
-              course_id: payload.courseId || null,
-              has_face_registered: false,
-            }
-          ]).select().single();
+          const studentPayload: any = {
+            organization_id: actualOrgId,
+            user_id: targetUserId,
+            student_number: payload.studentNumber.trim(),
+            batch_year: parseInt(String(payload.batchYear), 10) || 2024,
+            semester: parseInt(String(payload.semester), 10) || 1,
+            department_id: payload.departmentId || null,
+            course_id: payload.courseId || null,
+          };
+
+          const { data: studentRow, error: studentError } = await supabase
+            .from('students')
+            .insert([studentPayload])
+            .select()
+            .single();
 
           if (studentError) {
             console.warn('Student insert error in Supabase:', studentError);
