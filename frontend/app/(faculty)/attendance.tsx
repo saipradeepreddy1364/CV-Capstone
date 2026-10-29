@@ -29,7 +29,7 @@ export default function FacultyAttendanceScreen() {
           .select('*, subjects(name)')
           .order('session_date', { ascending: false });
 
-        if (!error && data && data.length > 0) {
+        if (!error && data) {
           return data.map((s: any) => ({
             id: s.id,
             organizationId: s.organization_id,
@@ -64,7 +64,7 @@ export default function FacultyAttendanceScreen() {
     queryFn: async () => {
       try {
         const { data, error } = await supabase.from('subjects').select('*');
-        if (!error && data && data.length > 0) {
+        if (!error && data) {
           return data.map((sub: any) => ({
             id: sub.id,
             name: sub.name,

@@ -24,12 +24,12 @@ export default function AdminAttendanceScreen() {
           .select('*, subjects(name), faculty(users(first_name, last_name))')
           .order('session_date', { ascending: false });
 
-        if (!error && data && data.length > 0) {
+        if (!error && data) {
           return data.map((s: any) => ({
             id: s.id,
             organizationId: s.organization_id,
             facultyId: s.faculty_id,
-            facultyName: s.faculty?.users ? `${s.faculty.users.first_name} ${s.faculty.users.last_name}` : 'Faculty',
+            facultyName: s.faculty?.users ? `${s.faculty.users.first_name || ''} ${s.faculty.users.last_name || ''}`.trim() : 'Faculty',
             subjectId: s.subject_id,
             subjectName: s.subjects?.name || 'Class Lecture',
             sessionDate: s.session_date,

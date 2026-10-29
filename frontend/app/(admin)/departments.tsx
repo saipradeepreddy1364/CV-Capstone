@@ -20,7 +20,7 @@ export default function AdminDepartmentsScreen() {
       // Direct Supabase query
       try {
         const { data, error } = await supabase.from('departments').select('*');
-        if (!error && data && data.length > 0) {
+        if (!error && data) {
           return data.map((d: any) => ({
             id: d.id,
             name: d.name,

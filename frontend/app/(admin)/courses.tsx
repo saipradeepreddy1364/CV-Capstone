@@ -23,7 +23,7 @@ export default function AdminCoursesScreen() {
         const { data, error } = await supabase
           .from('courses')
           .select('*, departments(name)');
-        if (!error && data && data.length > 0) {
+        if (!error && data) {
           return data.map((c: any) => ({
             id: c.id,
             name: c.name,
@@ -53,7 +53,7 @@ export default function AdminCoursesScreen() {
       // Fetch departments directly from Supabase
       try {
         const { data, error } = await supabase.from('departments').select('*');
-        if (!error && data && data.length > 0) {
+        if (!error && data) {
           return data.map((d: any) => ({
             id: d.id,
             name: d.name,

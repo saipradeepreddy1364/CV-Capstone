@@ -28,7 +28,7 @@ export default function FacultyFaceRegistrationScreen() {
           .from('students')
           .select('*, users(first_name, last_name, email), departments(name), courses(name)');
 
-        if (!error && data && data.length > 0) {
+        if (!error && data) {
           return data.map((s: any) => ({
             id: s.id,
             userId: s.user_id,
@@ -41,10 +41,11 @@ export default function FacultyFaceRegistrationScreen() {
             courseId: s.course_id,
             courseName: s.courses?.name || '',
             hasFaceRegistered: s.has_face_registered || false,
+            faceRegistered: s.has_face_registered || false,
             firstName: s.users?.first_name || '',
             lastName: s.users?.last_name || '',
             email: s.users?.email || '',
-            fullName: `${s.users?.first_name || ''} ${s.users?.last_name || ''}`,
+            fullName: `${s.users?.first_name || ''} ${s.users?.last_name || ''}`.trim() || s.users?.email || 'Student',
             isActive: true,
           }));
         }

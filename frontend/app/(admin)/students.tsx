@@ -43,32 +43,47 @@ export default function AdminStudentsScreen() {
     queryKey: ['admin_students', orgId],
     queryFn: async () => {
       try {
-        const { data, error } = await supabase.from('students').select('*, users(first_name, last_name, email), departments(name), courses(name)');
-        if (!error && data && data.length > 0) {
-          return data.map((s: any) => ({
-            id: s.id,
-            userId: s.user_id,
-            organizationId: s.organization_id,
-            studentNumber: s.student_number,
-            batchYear: s.batch_year,
-            semester: s.semester,
-            departmentId: s.department_id,
-            departmentName: s.departments?.name || '',
-            courseId: s.course_id,
-            courseName: s.courses?.name || '',
-            hasFaceRegistered: s.has_face_registered || false,
-            firstName: s.users?.first_name || '',
-            lastName: s.users?.last_name || '',
-            email: s.users?.email || '',
-            isActive: true,
-          }));
+        const { data, error } = await supabase
+          .from('students')
+          .select('*, users(first_name, last_name, email), departments(name), courses(name)');
+        if (!error && data) {
+          return data.map((s: any) => {
+            const first = s.users?.first_name || '';
+            const last = s.users?.last_name || '';
+            const fullName = `${first} ${last}`.trim() || s.users?.email || 'Student';
+            return {
+              id: s.id,
+              userId: s.user_id,
+              organizationId: s.organization_id,
+              studentNumber: s.student_number || '',
+              batchYear: s.batch_year,
+              semester: s.semester,
+              departmentId: s.department_id,
+              departmentName: s.departments?.name || '',
+              courseId: s.course_id,
+              courseName: s.courses?.name || '',
+              hasFaceRegistered: s.has_face_registered || false,
+              faceRegistered: s.has_face_registered || false,
+              firstName: first,
+              lastName: last,
+              fullName: fullName,
+              email: s.users?.email || '',
+              isActive: true,
+              createdAt: s.created_at || new Date().toISOString(),
+            };
+          });
         }
-      } catch (e) {}
+      } catch (e) {
+        console.warn('Supabase fetch students error:', e);
+      }
 
       if (!orgId) return [];
       try {
         const res = await apiClient.get(`/organizations/${orgId}/students`);
-        return res.data.data;
+        return (res.data.data || []).map((s: any) => ({
+          ...s,
+          fullName: s.fullName || `${s.firstName || ''} ${s.lastName || ''}`.trim() || s.email || 'Student',
+        }));
       } catch {
         return [];
       }
@@ -81,14 +96,22 @@ export default function AdminStudentsScreen() {
     queryFn: async () => {
       try {
         const { data, error } = await supabase.from('departments').select('*');
-        if (!error && data && data.length > 0) {
-          return data.map((d: any) => ({ id: d.id, name: d.name, code: d.code }));
+        if (!error && data) {
+          return data.map((d: any) => ({
+            id: d.id,
+            name: d.name,
+            code: d.code,
+            organizationId: d.organization_id,
+            createdAt: d.created_at,
+          }));
         }
-      } catch (e) {}
+      } catch (e) {
+        console.warn('Supabase fetch departments error:', e);
+      }
 
       try {
         const res = await apiClient.get('/departments');
-        return res.data.data;
+        return res.data.data || [];
       } catch {
         return [];
       }
@@ -100,7 +123,7 @@ export default function AdminStudentsScreen() {
     queryFn: async () => {
       try {
         const { data, error } = await supabase.from('courses').select('*, departments(name)');
-        if (!error && data && data.length > 0) {
+        if (!error && data) {
           return data.map((c: any) => ({
             id: c.id,
             name: c.name,
@@ -108,13 +131,17 @@ export default function AdminStudentsScreen() {
             departmentId: c.department_id,
             departmentName: c.departments?.name || '',
             studentCount: 0,
+            organizationId: c.organization_id,
+            createdAt: c.created_at,
           }));
         }
-      } catch (e) {}
+      } catch (e) {
+        console.warn('Supabase fetch courses error:', e);
+      }
 
       try {
         const res = await apiClient.get('/courses');
-        return res.data.data;
+        return res.data.data || [];
       } catch {
         return [];
       }
@@ -141,12 +168,20 @@ export default function AdminStudentsScreen() {
           }
         ]).select().single();
 
-        if (!userError && userRow) {
+        if (userError) {
+          console.warn('User insert error in Supabase:', userError);
+          if (userError.code === '23505' || userError.message?.toLowerCase().includes('duplicate') || userError.message?.toLowerCase().includes('unique')) {
+            throw new Error('A user with this email address already exists.');
+          }
+          throw new Error(userError.message || 'Failed to create user account');
+        }
+
+        if (userRow) {
           const { data: studentRow, error: studentError } = await supabase.from('students').insert([
             {
               organization_id: actualOrgId,
               user_id: userRow.id,
-              student_number: payload.studentNumber,
+              student_number: payload.studentNumber.trim(),
               batch_year: payload.batchYear,
               semester: payload.semester,
               department_id: payload.departmentId || null,
@@ -155,16 +190,31 @@ export default function AdminStudentsScreen() {
             }
           ]).select().single();
 
-          if (!studentError && studentRow) {
+          if (studentError) {
+            console.warn('Student insert error in Supabase:', studentError);
+            if (studentError.code === '23505' || studentError.message?.toLowerCase().includes('duplicate') || studentError.message?.toLowerCase().includes('unique')) {
+              throw new Error('A student with this ID number already exists.');
+            }
+            throw new Error(studentError.message || 'Failed to register student profile');
+          }
+
+          if (studentRow) {
             return studentRow;
           }
         }
 
         const res = await apiClient.post(`/organizations/${actualOrgId}/students`, payload);
         return res.data.data;
-      } catch {
-        const res = await apiClient.post(`/organizations/${orgId}/students`, payload);
-        return res.data.data;
+      } catch (err: any) {
+        if (err.message && !err.response) {
+          throw err;
+        }
+        try {
+          const res = await apiClient.post(`/organizations/${orgId}/students`, payload);
+          return res.data.data;
+        } catch (apiErr: any) {
+          throw new Error(err.message || apiErr.response?.data?.message || 'Failed to create student');
+        }
       }
     },
     onSuccess: () => {
@@ -182,8 +232,14 @@ export default function AdminStudentsScreen() {
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => {
       try {
+        const { data: std } = await supabase.from('students').select('user_id').eq('id', id).maybeSingle();
         await supabase.from('students').delete().eq('id', id);
-      } catch {}
+        if (std?.user_id) {
+          await supabase.from('users').delete().eq('id', std.user_id);
+        }
+      } catch (e) {
+        console.warn('Supabase delete student error:', e);
+      }
       try {
         await apiClient.delete(`/students/${id}`);
       } catch {}
@@ -229,9 +285,9 @@ export default function AdminStudentsScreen() {
 
   const filteredStudents = studentList.filter(
     (s) =>
-      s.fullName.toLowerCase().includes(search.toLowerCase()) ||
-      s.studentNumber.toLowerCase().includes(search.toLowerCase()) ||
-      s.email.toLowerCase().includes(search.toLowerCase())
+      (s.fullName || `${s.firstName || ''} ${s.lastName || ''}`).toLowerCase().includes(search.toLowerCase()) ||
+      (s.studentNumber || '').toLowerCase().includes(search.toLowerCase()) ||
+      (s.email || '').toLowerCase().includes(search.toLowerCase())
   );
 
   return (
@@ -280,7 +336,7 @@ export default function AdminStudentsScreen() {
                 <View style={{ flex: 1 }}>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 4 }}>
                     <Text style={{ color: '#f8fafc', fontSize: 16, fontWeight: '800' }}>
-                      {item.fullName}
+                      {item.fullName || `${item.firstName || ''} ${item.lastName || ''}`.trim() || item.email || 'Student'}
                     </Text>
                     <View style={{ backgroundColor: 'rgba(56, 189, 248, 0.2)', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6 }}>
                       <Text style={{ color: '#38bdf8', fontSize: 11, fontWeight: '700' }}>
@@ -316,7 +372,7 @@ export default function AdminStudentsScreen() {
 
                 <TouchableOpacity
                   onPress={() => {
-                    Alert.alert('Delete Student', `Delete ${item.fullName}?`, [
+                    Alert.alert('Delete Student', `Delete ${item.fullName || item.email || 'this student'}?`, [
                       { text: 'Cancel', style: 'cancel' },
                       { text: 'Delete', style: 'destructive', onPress: () => deleteMutation.mutate(item.id) },
                     ]);

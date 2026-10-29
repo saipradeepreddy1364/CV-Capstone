@@ -42,29 +42,43 @@ export default function AdminFacultyScreen() {
     queryKey: ['admin_faculty', orgId],
     queryFn: async () => {
       try {
-        const { data, error } = await supabase.from('faculty').select('*, users(first_name, last_name, email, phone), departments(name)');
-        if (!error && data && data.length > 0) {
-          return data.map((f: any) => ({
-            id: f.id,
-            userId: f.user_id,
-            organizationId: f.organization_id,
-            facultyNumber: f.faculty_number,
-            designation: f.designation,
-            departmentId: f.department_id,
-            departmentName: f.departments?.name || '',
-            firstName: f.users?.first_name || '',
-            lastName: f.users?.last_name || '',
-            email: f.users?.email || '',
-            phone: f.users?.phone || '',
-            isActive: true,
-          }));
+        const { data, error } = await supabase
+          .from('faculty')
+          .select('*, users(first_name, last_name, email, phone), departments(name)');
+        if (!error && data) {
+          return data.map((f: any) => {
+            const first = f.users?.first_name || '';
+            const last = f.users?.last_name || '';
+            const fullName = `${first} ${last}`.trim() || f.users?.email || 'Faculty Member';
+            return {
+              id: f.id,
+              userId: f.user_id,
+              organizationId: f.organization_id,
+              facultyNumber: f.faculty_number || '',
+              designation: f.designation || 'Faculty',
+              departmentId: f.department_id,
+              departmentName: f.departments?.name || '',
+              firstName: first,
+              lastName: last,
+              fullName: fullName,
+              email: f.users?.email || '',
+              phone: f.users?.phone || '',
+              isActive: true,
+              createdAt: f.created_at || new Date().toISOString(),
+            };
+          });
         }
-      } catch (e) {}
+      } catch (e) {
+        console.warn('Supabase fetch faculty error:', e);
+      }
 
       if (!orgId) return [];
       try {
         const res = await apiClient.get(`/organizations/${orgId}/faculty`);
-        return res.data.data;
+        return (res.data.data || []).map((f: any) => ({
+          ...f,
+          fullName: f.fullName || `${f.firstName || ''} ${f.lastName || ''}`.trim() || f.email || 'Faculty Member',
+        }));
       } catch {
         return [];
       }
@@ -77,14 +91,22 @@ export default function AdminFacultyScreen() {
     queryFn: async () => {
       try {
         const { data, error } = await supabase.from('departments').select('*');
-        if (!error && data && data.length > 0) {
-          return data.map((d: any) => ({ id: d.id, name: d.name, code: d.code }));
+        if (!error && data) {
+          return data.map((d: any) => ({
+            id: d.id,
+            name: d.name,
+            code: d.code,
+            organizationId: d.organization_id,
+            createdAt: d.created_at,
+          }));
         }
-      } catch (e) {}
+      } catch (e) {
+        console.warn('Supabase fetch departments error:', e);
+      }
 
       try {
         const res = await apiClient.get('/departments');
-        return res.data.data;
+        return res.data.data || [];
       } catch {
         return [];
       }
@@ -105,33 +127,56 @@ export default function AdminFacultyScreen() {
             password_hash: payload.password || 'Faculty@123',
             first_name: payload.firstName.trim(),
             last_name: payload.lastName.trim(),
-            phone: payload.phone,
+            phone: payload.phone || null,
             role: 'FACULTY',
             is_active: true,
           }
         ]).select().single();
 
-        if (!userError && userRow) {
+        if (userError) {
+          console.warn('User insert error in Supabase:', userError);
+          if (userError.code === '23505' || userError.message?.toLowerCase().includes('duplicate') || userError.message?.toLowerCase().includes('unique')) {
+            throw new Error('A user with this email address already exists.');
+          }
+          throw new Error(userError.message || 'Failed to create user account');
+        }
+
+        if (userRow) {
           const { data: facRow, error: facError } = await supabase.from('faculty').insert([
             {
               organization_id: actualOrgId,
               user_id: userRow.id,
-              faculty_number: payload.facultyNumber,
+              faculty_number: payload.facultyNumber.trim(),
               designation: payload.designation,
               department_id: payload.departmentId || null,
             }
           ]).select().single();
 
-          if (!facError && facRow) {
+          if (facError) {
+            console.warn('Faculty insert error in Supabase:', facError);
+            if (facError.code === '23505' || facError.message?.toLowerCase().includes('duplicate') || facError.message?.toLowerCase().includes('unique')) {
+              throw new Error('A faculty member with this ID number already exists.');
+            }
+            throw new Error(facError.message || 'Failed to register faculty profile');
+          }
+
+          if (facRow) {
             return facRow;
           }
         }
 
         const res = await apiClient.post(`/organizations/${actualOrgId}/faculty`, payload);
         return res.data.data;
-      } catch {
-        const res = await apiClient.post(`/organizations/${orgId}/faculty`, payload);
-        return res.data.data;
+      } catch (err: any) {
+        if (err.message && !err.response) {
+          throw err;
+        }
+        try {
+          const res = await apiClient.post(`/organizations/${orgId}/faculty`, payload);
+          return res.data.data;
+        } catch (apiErr: any) {
+          throw new Error(err.message || apiErr.response?.data?.message || 'Failed to create faculty');
+        }
       }
     },
     onSuccess: () => {
@@ -149,8 +194,14 @@ export default function AdminFacultyScreen() {
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => {
       try {
+        const { data: fac } = await supabase.from('faculty').select('user_id').eq('id', id).maybeSingle();
         await supabase.from('faculty').delete().eq('id', id);
-      } catch {}
+        if (fac?.user_id) {
+          await supabase.from('users').delete().eq('id', fac.user_id);
+        }
+      } catch (e) {
+        console.warn('Supabase delete error:', e);
+      }
       try {
         await apiClient.delete(`/faculty/${id}`);
       } catch {}
@@ -194,9 +245,9 @@ export default function AdminFacultyScreen() {
 
   const filteredFaculty = facultyList.filter(
     (f) =>
-      f.fullName.toLowerCase().includes(search.toLowerCase()) ||
-      f.email.toLowerCase().includes(search.toLowerCase()) ||
-      f.facultyNumber.toLowerCase().includes(search.toLowerCase())
+      (f.fullName || `${f.firstName || ''} ${f.lastName || ''}`).toLowerCase().includes(search.toLowerCase()) ||
+      (f.email || '').toLowerCase().includes(search.toLowerCase()) ||
+      (f.facultyNumber || '').toLowerCase().includes(search.toLowerCase())
   );
 
   return (
@@ -245,7 +296,7 @@ export default function AdminFacultyScreen() {
                 <View style={{ flex: 1 }}>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 4 }}>
                     <Text style={{ color: '#f8fafc', fontSize: 16, fontWeight: '800' }}>
-                      {item.fullName}
+                      {item.fullName || `${item.firstName || ''} ${item.lastName || ''}`.trim() || item.email || 'Faculty'}
                     </Text>
                     <View style={{ backgroundColor: 'rgba(99, 102, 241, 0.2)', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6 }}>
                       <Text style={{ color: '#818cf8', fontSize: 11, fontWeight: '700' }}>
@@ -268,7 +319,7 @@ export default function AdminFacultyScreen() {
 
                 <TouchableOpacity
                   onPress={() => {
-                    Alert.alert('Delete Faculty', `Delete ${item.fullName}?`, [
+                    Alert.alert('Delete Faculty', `Delete ${item.fullName || item.email || 'this faculty member'}?`, [
                       { text: 'Cancel', style: 'cancel' },
                       { text: 'Delete', style: 'destructive', onPress: () => deleteMutation.mutate(item.id) },
                     ]);

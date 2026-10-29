@@ -21,7 +21,7 @@ export default function AdminSubjectsScreen() {
     queryFn: async () => {
       try {
         const { data, error } = await supabase.from('subjects').select('*, departments(name)');
-        if (!error && data && data.length > 0) {
+        if (!error && data) {
           return data.map((s: any) => ({
             id: s.id,
             name: s.name,
@@ -47,7 +47,7 @@ export default function AdminSubjectsScreen() {
     queryFn: async () => {
       try {
         const { data, error } = await supabase.from('departments').select('*');
-        if (!error && data && data.length > 0) {
+        if (!error && data) {
           return data.map((d: any) => ({ id: d.id, name: d.name, code: d.code }));
         }
       } catch (e) {}

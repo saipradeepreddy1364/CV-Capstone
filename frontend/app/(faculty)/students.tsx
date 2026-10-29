@@ -3,6 +3,7 @@ import { View, Text, FlatList, TouchableOpacity, RefreshControl } from 'react-na
 import { useRouter } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 import { apiClient } from '../../src/api/client';
+import { supabase } from '../../src/lib/supabase';
 import { useAuth } from '../../src/store/authContext';
 import { StudentDto } from '../../src/types';
 import { Header } from '../../src/components/Header';
@@ -17,11 +18,41 @@ export default function FacultyStudentsScreen() {
   const { data: students = [], isLoading, refetch, isRefetching } = useQuery<StudentDto[]>({
     queryKey: ['faculty_assigned_students', facultyId],
     queryFn: async () => {
+      try {
+        const { data, error } = await supabase
+          .from('students')
+          .select('*, users(first_name, last_name, email), departments(name), courses(name)');
+        if (!error && data) {
+          return data.map((s: any) => ({
+            id: s.id,
+            userId: s.user_id,
+            organizationId: s.organization_id,
+            studentNumber: s.student_number || '',
+            batchYear: s.batch_year,
+            semester: s.semester,
+            departmentId: s.department_id,
+            departmentName: s.departments?.name || '',
+            courseId: s.course_id,
+            courseName: s.courses?.name || '',
+            hasFaceRegistered: s.has_face_registered || false,
+            faceRegistered: s.has_face_registered || false,
+            firstName: s.users?.first_name || '',
+            lastName: s.users?.last_name || '',
+            fullName: `${s.users?.first_name || ''} ${s.users?.last_name || ''}`.trim() || s.users?.email || 'Student',
+            email: s.users?.email || '',
+            isActive: true,
+          }));
+        }
+      } catch (e) {}
+
       if (!facultyId) return [];
-      const res = await apiClient.get(`/faculty/${facultyId}/students`);
-      return res.data.data;
+      try {
+        const res = await apiClient.get(`/faculty/${facultyId}/students`);
+        return res.data.data;
+      } catch {
+        return [];
+      }
     },
-    enabled: !!facultyId,
   });
 
   return (
