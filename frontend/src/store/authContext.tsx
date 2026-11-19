@@ -51,11 +51,31 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const storedUser = await storage.getItem('smart_attendance_user');
 
       if (storedToken && storedUser) {
-        setToken(storedToken);
-        setUser(JSON.parse(storedUser));
+        try {
+          const parsedUser = JSON.parse(storedUser);
+          if (parsedUser && parsedUser.role) {
+            setToken(storedToken);
+            setUser(parsedUser);
+          } else {
+            await storage.removeItem('smart_attendance_access_token');
+            await storage.removeItem('smart_attendance_user');
+            setToken(null);
+            setUser(null);
+          }
+        } catch {
+          await storage.removeItem('smart_attendance_access_token');
+          await storage.removeItem('smart_attendance_user');
+          setToken(null);
+          setUser(null);
+        }
+      } else {
+        setToken(null);
+        setUser(null);
       }
     } catch (e) {
       console.error('Failed to restore session:', e);
+      setToken(null);
+      setUser(null);
     } finally {
       setIsLoading(false);
     }
@@ -285,9 +305,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (isLoading) return;
 
     const inAuthGroup = segments[0] === '(auth)';
+    const atRoot = !segments[0] || segments[0] === 'index';
+
     if (!token && !inAuthGroup) {
       router.replace('/(auth)/login');
-    } else if (token && inAuthGroup && user) {
+    } else if (token && (inAuthGroup || atRoot) && user) {
       navigateByRole(user.role);
     }
   }, [token, segments, isLoading, user]);
