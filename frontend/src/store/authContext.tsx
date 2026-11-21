@@ -85,123 +85,89 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const cleanEmail = email.toLowerCase().trim();
     if (!cleanEmail) throw new Error('Please enter your email address');
 
-    // 1. Check user directly in Supabase
-    try {
-      const { data: userRow, error: userError } = await supabase
-        .from('users')
-        .select('*')
-        .eq('email', cleanEmail)
-        .maybeSingle();
+    // 1. Direct Supabase User Authentication
+    const { data: userRow, error: userError } = await supabase
+      .from('users')
+      .select('*')
+      .eq('email', cleanEmail)
+      .maybeSingle();
 
-      if (userError) {
-        console.warn('Supabase query error:', userError);
-      }
+    if (userError) {
+      console.warn('Supabase query error:', userError);
+      throw new Error(`Database error: ${userError.message || 'Failed to query user'}`);
+    }
 
-      if (userRow) {
-        // Enforce role portal boundaries if an expected role is specified
-        if (expectedRole && userRow.role !== expectedRole) {
-          const roleLabels: Record<string, string> = {
-            ORGANIZATION_ADMIN: 'Organization Admin',
-            FACULTY: 'Faculty Member',
-            STUDENT: 'Student',
-          };
-          const actualLabel = roleLabels[userRow.role] || userRow.role;
-          const expectedLabel = roleLabels[expectedRole] || expectedRole;
-          throw new Error(`Role Mismatch: This account belongs to a ${actualLabel}. Please switch to the "${expectedLabel === 'Organization Admin' ? 'Admin' : expectedLabel}" portal tab.`);
-        }
+    if (!userRow) {
+      // Helpful hint if user has a typo in similar domain
+      throw new Error(`No account found for "${cleanEmail}". Please verify your email spelling or contact administrator.`);
+    }
 
-        // Check password if set
-        if (userRow.password_hash && password && userRow.password_hash !== 'placeholder_hash') {
-          if (!userRow.password_hash.startsWith('$2a$') && !userRow.password_hash.startsWith('$2b$')) {
-            if (userRow.password_hash !== password) {
-              if (userRow.password_hash.toLowerCase() === password.toLowerCase()) {
-                // Auto-sync exact capitalization in database
-                await supabase.from('users').update({ password_hash: password }).eq('id', userRow.id);
-              } else {
-                throw new Error('Incorrect password. Please verify your credentials or check capitalization.');
-              }
-            }
+    // Enforce role portal boundaries if an expected role is specified
+    if (expectedRole && userRow.role !== expectedRole) {
+      const roleLabels: Record<string, string> = {
+        ORGANIZATION_ADMIN: 'Organization Admin',
+        FACULTY: 'Faculty Member',
+        STUDENT: 'Student',
+      };
+      const actualLabel = roleLabels[userRow.role] || userRow.role;
+      const expectedLabel = roleLabels[expectedRole] || expectedRole;
+      throw new Error(`Role Mismatch: This account belongs to a ${actualLabel}. Please switch to the "${expectedLabel === 'Organization Admin' ? 'Admin' : expectedLabel}" portal tab.`);
+    }
+
+    // Verify Password
+    if (userRow.password_hash && password && userRow.password_hash !== 'placeholder_hash') {
+      if (!userRow.password_hash.startsWith('$2a$') && !userRow.password_hash.startsWith('$2b$')) {
+        if (userRow.password_hash !== password) {
+          if (userRow.password_hash.toLowerCase() === password.toLowerCase()) {
+            // Auto-sync exact capitalization in database so subsequent logins match
+            await supabase.from('users').update({ password_hash: password }).eq('id', userRow.id);
+          } else {
+            throw new Error('Incorrect password. Please verify your credentials or check capitalization.');
           }
         }
-
-        // Fetch role specific associations
-        let facultyId: string | undefined = undefined;
-        let studentId: string | undefined = undefined;
-        let identNum: string | undefined = undefined;
-
-        if (userRow.role === 'FACULTY') {
-          const { data: fac } = await supabase.from('faculty').select('id, faculty_number').eq('user_id', userRow.id).maybeSingle();
-          if (fac) {
-            facultyId = fac.id;
-            identNum = fac.faculty_number;
-          }
-        } else if (userRow.role === 'STUDENT') {
-          const { data: std } = await supabase.from('students').select('id, student_number').eq('user_id', userRow.id).maybeSingle();
-          if (std) {
-            studentId = std.id;
-            identNum = std.student_number;
-          }
-        }
-
-        const authUser: UserDto = {
-          id: userRow.id,
-          organizationId: userRow.organization_id || '',
-          email: userRow.email,
-          firstName: userRow.first_name,
-          lastName: userRow.last_name,
-          fullName: `${userRow.first_name} ${userRow.last_name}`.trim(),
-          role: userRow.role as RoleType,
-          facultyId,
-          studentId,
-          identificationNumber: identNum,
-          isActive: userRow.is_active,
-        };
-
-        const tokenVal = 'sb-session-' + Date.now();
-        await storage.setItem('smart_attendance_access_token', tokenVal);
-        await storage.setItem('smart_attendance_user', JSON.stringify(authUser));
-
-        setToken(tokenVal);
-        setUser(authUser);
-        navigateByRole(authUser.role);
-        return;
-      }
-    } catch (e: any) {
-      console.warn('Supabase login check:', e.message);
-      if (e.message && (e.message.startsWith('Role Mismatch:') || e.message.startsWith('Incorrect password'))) {
-        throw e;
       }
     }
 
-    // 2. Try backend login API if configured
-    try {
-      const res = await apiClient.post('/auth/login', { email: cleanEmail, password });
-      const { accessToken, refreshToken, user: authUser } = res.data.data;
+    // Fetch role specific associations
+    let facultyId: string | undefined = undefined;
+    let studentId: string | undefined = undefined;
+    let identNum: string | undefined = undefined;
 
-      if (expectedRole && authUser.role !== expectedRole) {
-        const roleLabels: Record<string, string> = {
-          ORGANIZATION_ADMIN: 'Organization Admin',
-          FACULTY: 'Faculty Member',
-          STUDENT: 'Student',
-        };
-        const actualLabel = roleLabels[authUser.role] || authUser.role;
-        throw new Error(`Role Mismatch: This account belongs to a ${actualLabel}.`);
+    if (userRow.role === 'FACULTY') {
+      const { data: fac } = await supabase.from('faculty').select('id, faculty_number').eq('user_id', userRow.id).maybeSingle();
+      if (fac) {
+        facultyId = fac.id;
+        identNum = fac.faculty_number;
       }
-
-      await storage.setItem('smart_attendance_access_token', accessToken);
-      await storage.setItem('smart_attendance_refresh_token', refreshToken);
-      await storage.setItem('smart_attendance_user', JSON.stringify(authUser));
-
-      setToken(accessToken);
-      setUser(authUser);
-      navigateByRole(authUser.role);
-      return;
-    } catch (err: any) {
-      if (err.message && err.message.startsWith('Role Mismatch:')) {
-        throw err;
+    } else if (userRow.role === 'STUDENT') {
+      const { data: std } = await supabase.from('students').select('id, student_number').eq('user_id', userRow.id).maybeSingle();
+      if (std) {
+        studentId = std.id;
+        identNum = std.student_number;
       }
-      throw new Error(`No account found for "${cleanEmail}" in your Supabase database. Please check your credentials or register.`);
     }
+
+    const authUser: UserDto = {
+      id: userRow.id,
+      organizationId: userRow.organization_id || '',
+      email: userRow.email,
+      firstName: userRow.first_name,
+      lastName: userRow.last_name,
+      fullName: `${userRow.first_name} ${userRow.last_name}`.trim(),
+      role: userRow.role as RoleType,
+      facultyId,
+      studentId,
+      identificationNumber: identNum,
+      isActive: userRow.is_active,
+    };
+
+    const tokenVal = 'sb-session-' + Date.now();
+    await storage.setItem('smart_attendance_access_token', tokenVal);
+    await storage.setItem('smart_attendance_user', JSON.stringify(authUser));
+
+    setToken(tokenVal);
+    setUser(authUser);
+    navigateByRole(authUser.role);
   };
 
   const register = async (payload: {

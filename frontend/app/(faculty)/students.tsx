@@ -19,39 +19,42 @@ export default function FacultyStudentsScreen() {
     queryKey: ['faculty_assigned_students', facultyId],
     queryFn: async () => {
       try {
-        const { data, error } = await supabase
-          .from('students')
-          .select('*, users(first_name, last_name, email), departments(name), courses(name)');
-        if (!error && data) {
-          return data.map((s: any) => ({
-            id: s.id,
-            userId: s.user_id,
-            organizationId: s.organization_id,
-            studentNumber: s.student_number || '',
-            batchYear: s.batch_year,
-            semester: s.semester,
-            departmentId: s.department_id,
-            departmentName: s.departments?.name || '',
-            courseId: s.course_id,
-            courseName: s.courses?.name || '',
-            hasFaceRegistered: s.has_face_registered || false,
-            faceRegistered: s.has_face_registered || false,
-            firstName: s.users?.first_name || '',
-            lastName: s.users?.last_name || '',
-            fullName: `${s.users?.first_name || ''} ${s.users?.last_name || ''}`.trim() || s.users?.email || 'Student',
-            email: s.users?.email || '',
-            isActive: true,
-          }));
-        }
-      } catch (e) {}
+        const [stdRes, faceRes] = await Promise.all([
+          supabase.from('students').select('*, users(first_name, last_name, email), departments(name), courses(name)'),
+          supabase.from('face_profiles').select('student_id'),
+        ]);
 
-      if (!facultyId) return [];
-      try {
-        const res = await apiClient.get(`/faculty/${facultyId}/students`);
-        return res.data.data;
-      } catch {
-        return [];
+        const registeredStudentIds = new Set((faceRes.data || []).map((f: any) => f.student_id));
+
+        if (!stdRes.error && stdRes.data) {
+          return stdRes.data.map((s: any) => {
+            const hasFace = registeredStudentIds.has(s.id) || !!s.has_face_registered;
+            return {
+              id: s.id,
+              userId: s.user_id,
+              organizationId: s.organization_id,
+              studentNumber: s.student_number || '',
+              batchYear: s.batch_year,
+              semester: s.semester,
+              departmentId: s.department_id,
+              departmentName: s.departments?.name || '',
+              courseId: s.course_id,
+              courseName: s.courses?.name || '',
+              hasFaceRegistered: hasFace,
+              faceRegistered: hasFace,
+              firstName: s.users?.first_name || '',
+              lastName: s.users?.last_name || '',
+              fullName: `${s.users?.first_name || ''} ${s.users?.last_name || ''}`.trim() || s.users?.email || 'Student',
+              email: s.users?.email || '',
+              createdAt: s.created_at || new Date().toISOString(),
+              isActive: true,
+            };
+          });
+        }
+      } catch (e) {
+        console.warn('Supabase fetch students error:', e);
       }
+      return [];
     },
   });
 

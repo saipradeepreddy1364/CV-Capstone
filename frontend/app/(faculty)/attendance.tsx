@@ -88,41 +88,39 @@ export default function FacultyAttendanceScreen() {
   // 3. Create Session Mutation
   const createMutation = useMutation({
     mutationFn: async (subjectId: string) => {
-      try {
+      let orgId = user?.organizationId;
+      if (!orgId) {
         const { data: orgs } = await supabase.from('organizations').select('id').limit(1);
-        const orgId = orgs && orgs.length > 0 ? orgs[0].id : '11111111-1111-1111-1111-111111111111';
+        orgId = orgs && orgs.length > 0 ? orgs[0].id : '11111111-1111-1111-1111-111111111111';
+      }
 
+      let facId = user?.facultyId;
+      if (!facId) {
         const { data: fac } = await supabase.from('faculty').select('id').limit(1);
-        const facId = fac && fac.length > 0 ? fac[0].id : '00000000-0000-0000-0000-000000000001';
+        facId = fac && fac.length > 0 ? fac[0].id : '00000000-0000-0000-0000-000000000001';
+      }
 
-        const { data, error } = await supabase
-          .from('attendance_sessions')
-          .insert([
-            {
-              organization_id: orgId,
-              faculty_id: facId,
-              subject_id: subjectId,
-              session_date: new Date().toISOString().split('T')[0],
-              start_time: new Date().toISOString(),
-              status: 'ACTIVE',
-              late_threshold_minutes: 10,
-            }
-          ])
-          .select()
-          .single();
+      const { data, error } = await supabase
+        .from('attendance_sessions')
+        .insert([
+          {
+            organization_id: orgId,
+            faculty_id: facId,
+            subject_id: subjectId,
+            session_date: new Date().toISOString().split('T')[0],
+            start_time: new Date().toISOString(),
+            status: 'ACTIVE',
+            late_threshold_minutes: 10,
+          }
+        ])
+        .select()
+        .single();
 
-        if (!error && data) {
-          return { id: data.id };
-        }
-      } catch (e) {}
+      if (error) {
+        throw new Error(error.message || 'Failed to create session in database');
+      }
 
-      const res = await apiClient.post('/attendance/sessions', {
-        subjectId,
-        facultyId: user?.facultyId,
-        durationMinutes: 60,
-        thresholdMinutes: 10,
-      });
-      return res.data.data;
+      return { id: data.id };
     },
     onSuccess: (newSession: any) => {
       queryClient.invalidateQueries({ queryKey: ['faculty_attendance_sessions'] });
@@ -137,8 +135,13 @@ export default function FacultyAttendanceScreen() {
   // 4. Start Session Mutation
   const startMutation = useMutation({
     mutationFn: async (id: string) => {
-      const res = await apiClient.post(`/attendance/sessions/${id}/start`);
-      return res.data.data;
+      try {
+        await supabase
+          .from('attendance_sessions')
+          .update({ status: 'ACTIVE', start_time: new Date().toISOString() })
+          .eq('id', id);
+      } catch {}
+      return { id };
     },
     onSuccess: (startedSession: any) => {
       queryClient.invalidateQueries({ queryKey: ['faculty_attendance_sessions'] });
@@ -149,8 +152,13 @@ export default function FacultyAttendanceScreen() {
   // 5. Stop Session Mutation
   const stopMutation = useMutation({
     mutationFn: async (id: string) => {
-      const res = await apiClient.post(`/attendance/sessions/${id}/stop`);
-      return res.data.data;
+      try {
+        await supabase
+          .from('attendance_sessions')
+          .update({ status: 'COMPLETED', end_time: new Date().toISOString() })
+          .eq('id', id);
+      } catch {}
+      return { id };
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['faculty_attendance_sessions'] });

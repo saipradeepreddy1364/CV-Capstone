@@ -8,6 +8,7 @@ import {
   Platform,
   Alert,
   Dimensions,
+  useWindowDimensions,
 } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { X, Camera as CameraIcon, RefreshCw, CheckCircle, AlertTriangle, ShieldCheck } from 'lucide-react-native';
@@ -78,6 +79,12 @@ export const FaceCameraModal: React.FC<FaceCameraModalProps> = ({
   const toggleFacing = () => {
     setFacing((current) => (current === 'front' ? 'back' : 'front'));
   };
+
+  const { width: windowWidth, height: windowHeight } = useWindowDimensions();
+  const ovalRx = Math.min(windowWidth * 0.35, 140);
+  const ovalRy = ovalRx * 1.35;
+  const ovalCx = windowWidth / 2;
+  const ovalCy = Math.max(ovalRy + 30, Math.min(windowHeight * 0.35, 250));
 
   if (!visible) return null;
 
@@ -157,10 +164,10 @@ export const FaceCameraModal: React.FC<FaceCameraModalProps> = ({
                   <Mask id="mask" x="0" y="0" height="100%" width="100%">
                     <Rect height="100%" width="100%" fill="#ffffff" />
                     <Ellipse
-                      cx={SCREEN_WIDTH / 2}
-                      cy={SCREEN_HEIGHT * 0.35}
-                      rx={SCREEN_WIDTH * 0.35}
-                      ry={SCREEN_HEIGHT * 0.22}
+                      cx={ovalCx}
+                      cy={ovalCy}
+                      rx={ovalRx}
+                      ry={ovalRy}
                       fill="#000000"
                     />
                   </Mask>
@@ -168,10 +175,10 @@ export const FaceCameraModal: React.FC<FaceCameraModalProps> = ({
                 <Rect height="100%" width="100%" fill="rgba(9, 13, 22, 0.75)" mask="url(#mask)" />
                 {/* Oval guide border */}
                 <Ellipse
-                  cx={SCREEN_WIDTH / 2}
-                  cy={SCREEN_HEIGHT * 0.35}
-                  rx={SCREEN_WIDTH * 0.35}
-                  ry={SCREEN_HEIGHT * 0.22}
+                  cx={ovalCx}
+                  cy={ovalCy}
+                  rx={ovalRx}
+                  ry={ovalRy}
                   stroke={errorMessage ? '#ef4444' : '#6366f1'}
                   strokeWidth="3"
                   fill="none"
@@ -202,13 +209,13 @@ export const FaceCameraModal: React.FC<FaceCameraModalProps> = ({
               </View>
             )}
 
-            {/* Mandatory User Guidelines Box (Requirement 15) */}
+            {/* Mandatory User Guidelines Box */}
             <View
               style={{
                 position: 'absolute',
-                top: SCREEN_HEIGHT * 0.58,
-                left: 20,
-                right: 20,
+                bottom: 116,
+                left: Math.max(20, (windowWidth - 480) / 2),
+                width: Math.min(windowWidth - 40, 480),
                 backgroundColor: 'rgba(30, 41, 59, 0.92)',
                 borderRadius: 12,
                 padding: 12,

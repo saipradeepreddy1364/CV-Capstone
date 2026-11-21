@@ -3,6 +3,7 @@ import { View, Text, ScrollView, RefreshControl, TouchableOpacity } from 'react-
 import { useRouter } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 import { apiClient } from '../../src/api/client';
+import { supabase } from '../../src/lib/supabase';
 import { useAuth } from '../../src/store/authContext';
 import { FacultyAnalyticsDto } from '../../src/types';
 import { Header } from '../../src/components/Header';
@@ -29,9 +30,42 @@ export default function FacultyDashboardScreen() {
   const { data, isLoading, refetch, isRefetching } = useQuery<FacultyAnalyticsDto>({
     queryKey: ['faculty_analytics', facultyId],
     queryFn: async () => {
-      if (!facultyId) return null;
-      const res = await apiClient.get(`/analytics/faculty/${facultyId}`);
-      return res.data.data;
+      try {
+        const [studentsRes, sessionsRes, recordsRes] = await Promise.all([
+          supabase.from('students').select('id'),
+          supabase.from('attendance_sessions').select('id, status'),
+          supabase.from('attendance_records').select('status'),
+        ]);
+
+        const assignedStudents = studentsRes.data ? studentsRes.data.length : 0;
+        const todayClasses = sessionsRes.data ? sessionsRes.data.length : 0;
+        const records = recordsRes.data || [];
+        const presentCount = records.filter((r: any) => r.status === 'PRESENT').length;
+        const absentCount = records.filter((r: any) => r.status === 'ABSENT').length;
+        const lateCount = records.filter((r: any) => r.status === 'LATE').length;
+        const total = presentCount + absentCount + lateCount;
+        const averageAttendance = total > 0 ? Math.round(((presentCount + lateCount) / total) * 100) : 0;
+
+        return {
+          assignedStudents,
+          todayClasses,
+          presentCount,
+          absentCount,
+          lateCount,
+          averageAttendance,
+          subjectBreakdowns: [],
+        };
+      } catch (e) {
+        return {
+          assignedStudents: 0,
+          todayClasses: 0,
+          presentCount: 0,
+          absentCount: 0,
+          lateCount: 0,
+          averageAttendance: 0,
+          subjectBreakdowns: [],
+        };
+      }
     },
     enabled: !!facultyId,
   });

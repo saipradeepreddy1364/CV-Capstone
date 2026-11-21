@@ -17,17 +17,30 @@ export default function StudentFaceRegistrationScreen() {
   const [cameraVisible, setCameraVisible] = useState<boolean>(false);
   const studentId = user?.studentId;
 
-  const { data: student, isLoading } = useQuery<StudentDto>({
+  const { data: student, isLoading } = useQuery<StudentDto | null>({
     queryKey: ['student_profile', studentId],
     queryFn: async () => {
       try {
-        const { data, error } = await supabase
+        let q = supabase
           .from('students')
-          .select('*, users(first_name, last_name, email), departments(name), courses(name)')
-          .limit(1)
-          .single();
+          .select('*, users(first_name, last_name, email), departments(name), courses(name)');
+        if (studentId) {
+          q = q.eq('id', studentId);
+        } else if (user?.id) {
+          q = q.eq('user_id', user.id);
+        }
 
-        if (!error && data) {
+        const { data } = await q.limit(1).maybeSingle();
+
+        if (data) {
+          const { data: faceProfile } = await supabase
+            .from('face_profiles')
+            .select('id')
+            .eq('student_id', data.id)
+            .maybeSingle();
+
+          const hasFace = !!faceProfile;
+
           return {
             id: data.id,
             userId: data.user_id,
@@ -39,59 +52,48 @@ export default function StudentFaceRegistrationScreen() {
             departmentName: data.departments?.name || '',
             courseId: data.course_id,
             courseName: data.courses?.name || '',
-            hasFaceRegistered: data.has_face_registered || false,
+            hasFaceRegistered: hasFace,
+            faceRegistered: hasFace,
             firstName: data.users?.first_name || user?.firstName || 'Student',
             lastName: data.users?.last_name || user?.lastName || '',
+            fullName: `${data.users?.first_name || user?.firstName || 'Student'} ${data.users?.last_name || user?.lastName || ''}`.trim(),
             email: data.users?.email || user?.email || '',
+            createdAt: data.created_at || new Date().toISOString(),
             isActive: true,
           };
         }
-      } catch (e) {}
-
-      if (!studentId) return null;
-      try {
-        const res = await apiClient.get(`/students/${studentId}`);
-        return res.data.data;
-      } catch {
-        return null;
+      } catch (e) {
+        console.warn('Supabase fetch student face profile error:', e);
       }
+      return null;
     },
     enabled: true,
   });
 
   const registerMutation = useMutation({
     mutationFn: async (imageBase64: string) => {
-      try {
-        // Direct Supabase storage:
-        const { data: orgs } = await supabase.from('organizations').select('id').limit(1);
-        const orgId = orgs && orgs.length > 0 ? orgs[0].id : '11111111-1111-1111-1111-111111111111';
+      // Direct Supabase storage:
+      const { data: orgs } = await supabase.from('organizations').select('id').limit(1);
+      const orgId = orgs && orgs.length > 0 ? orgs[0].id : '11111111-1111-1111-1111-111111111111';
 
-        const { data: stdData } = await supabase.from('students').select('id').limit(1);
-        const actualStudentId = stdData && stdData.length > 0 ? stdData[0].id : studentId || '00000000-0000-0000-0000-000000000001';
+      const { data: stdData } = await supabase.from('students').select('id').limit(1);
+      const actualStudentId = studentId || (stdData && stdData.length > 0 ? stdData[0].id : '00000000-0000-0000-0000-000000000001');
 
-        // Save biometric vector / hash to face_profiles
-        await supabase.from('face_profiles').upsert([
-          {
-            organization_id: orgId,
-            student_id: actualStudentId,
-            embedding_data: imageBase64.substring(0, 128) + '_biometric_vector',
-            embedding_dimension: 128,
-            algorithm: 'LBP_HOG_V2',
-            quality_score: 0.98,
-          }
-        ], { onConflict: 'student_id' });
+      // Save biometric vector / hash to face_profiles
+      await supabase.from('face_profiles').upsert([
+        {
+          organization_id: orgId,
+          student_id: actualStudentId,
+          embedding_data: imageBase64.substring(0, 128) + '_biometric_vector',
+          embedding_dimension: 128,
+          algorithm: 'LBP_HOG_V2',
+          quality_score: 0.98,
+        }
+      ], { onConflict: 'student_id' });
 
-        return { success: true };
-      } catch (e) {
-        console.warn('Supabase face registration failed:', e);
-      }
+      await supabase.from('students').update({ has_face_registered: true }).eq('id', actualStudentId);
 
-      if (!studentId) throw new Error('Student ID is missing');
-      const res = await apiClient.post('/face/register', {
-        studentId,
-        imageBase64,
-      });
-      return res.data;
+      return { success: true };
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['student_profile'] });

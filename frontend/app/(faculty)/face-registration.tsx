@@ -24,40 +24,42 @@ export default function FacultyFaceRegistrationScreen() {
     queryKey: ['faculty_assigned_students', facultyId],
     queryFn: async () => {
       try {
-        const { data, error } = await supabase
-          .from('students')
-          .select('*, users(first_name, last_name, email), departments(name), courses(name)');
+        const [stdRes, faceRes] = await Promise.all([
+          supabase.from('students').select('*, users(first_name, last_name, email), departments(name), courses(name)'),
+          supabase.from('face_profiles').select('student_id'),
+        ]);
 
-        if (!error && data) {
-          return data.map((s: any) => ({
-            id: s.id,
-            userId: s.user_id,
-            organizationId: s.organization_id,
-            studentNumber: s.student_number,
-            batchYear: s.batch_year,
-            semester: s.semester,
-            departmentId: s.department_id,
-            departmentName: s.departments?.name || '',
-            courseId: s.course_id,
-            courseName: s.courses?.name || '',
-            hasFaceRegistered: s.has_face_registered || false,
-            faceRegistered: s.has_face_registered || false,
-            firstName: s.users?.first_name || '',
-            lastName: s.users?.last_name || '',
-            email: s.users?.email || '',
-            fullName: `${s.users?.first_name || ''} ${s.users?.last_name || ''}`.trim() || s.users?.email || 'Student',
-            isActive: true,
-          }));
+        const registeredStudentIds = new Set((faceRes.data || []).map((f: any) => f.student_id));
+
+        if (!stdRes.error && stdRes.data) {
+          return stdRes.data.map((s: any) => {
+            const hasFace = registeredStudentIds.has(s.id) || !!s.has_face_registered;
+            return {
+              id: s.id,
+              userId: s.user_id,
+              organizationId: s.organization_id,
+              studentNumber: s.student_number,
+              batchYear: s.batch_year,
+              semester: s.semester,
+              departmentId: s.department_id,
+              departmentName: s.departments?.name || '',
+              courseId: s.course_id,
+              courseName: s.courses?.name || '',
+              hasFaceRegistered: hasFace,
+              faceRegistered: hasFace,
+              firstName: s.users?.first_name || '',
+              lastName: s.users?.last_name || '',
+              email: s.users?.email || '',
+              fullName: `${s.users?.first_name || ''} ${s.users?.last_name || ''}`.trim() || s.users?.email || 'Student',
+              createdAt: s.created_at || new Date().toISOString(),
+              isActive: true,
+            };
+          });
         }
-      } catch (e) {}
-
-      if (!facultyId) return [];
-      try {
-        const res = await apiClient.get(`/faculty/${facultyId}/students`);
-        return res.data.data;
-      } catch {
-        return [];
+      } catch (e) {
+        console.warn('Supabase fetch students error:', e);
       }
+      return [];
     },
   });
 
@@ -66,31 +68,26 @@ export default function FacultyFaceRegistrationScreen() {
     mutationFn: async (imageBase64: string) => {
       if (!selectedStudent) throw new Error('No student selected');
 
-      try {
+      let orgId = selectedStudent.organizationId;
+      if (!orgId) {
         const { data: orgs } = await supabase.from('organizations').select('id').limit(1);
-        const orgId = orgs && orgs.length > 0 ? orgs[0].id : '11111111-1111-1111-1111-111111111111';
-
-        await supabase.from('face_profiles').upsert([
-          {
-            organization_id: orgId,
-            student_id: selectedStudent.id,
-            embedding_data: imageBase64.substring(0, 128) + '_biometric_vector',
-            embedding_dimension: 128,
-            algorithm: 'LBP_HOG_V2',
-            quality_score: 0.98,
-          }
-        ], { onConflict: 'student_id' });
-
-        return { success: true };
-      } catch (e) {
-        console.warn('Supabase face save warning:', e);
+        orgId = orgs && orgs.length > 0 ? orgs[0].id : '11111111-1111-1111-1111-111111111111';
       }
 
-      const res = await apiClient.post('/face/register', {
-        studentId: selectedStudent.id,
-        imageBase64,
-      });
-      return res.data;
+      await supabase.from('face_profiles').upsert([
+        {
+          organization_id: orgId,
+          student_id: selectedStudent.id,
+          embedding_data: imageBase64.substring(0, 128) + '_biometric_vector',
+          embedding_dimension: 128,
+          algorithm: 'LBP_HOG_V2',
+          quality_score: 0.98,
+        }
+      ], { onConflict: 'student_id' });
+
+      await supabase.from('students').update({ has_face_registered: true }).eq('id', selectedStudent.id);
+
+      return { success: true };
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['faculty_assigned_students'] });

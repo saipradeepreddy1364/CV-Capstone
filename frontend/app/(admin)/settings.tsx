@@ -37,20 +37,15 @@ export default function AdminSettingsScreen() {
         }
       } catch (e) {}
 
-      try {
-        const res = await apiClient.get('/attendance/settings');
-        return res.data.data;
-      } catch {
-        return {
-          id: 'default',
-          organizationId: user?.organizationId || '',
-          thresholdMinutes: 10,
-          lateEnabled: true,
-          lateStatus: 'LATE',
-          minimumRecognitionConfidence: 0.75,
-          sessionDurationMinutes: 60,
-        };
-      }
+      return {
+        id: 'default',
+        organizationId: user?.organizationId || '',
+        thresholdMinutes: 10,
+        lateEnabled: true,
+        lateStatus: 'LATE',
+        minimumRecognitionConfidence: 0.75,
+        sessionDurationMinutes: 60,
+      };
     },
   });
 

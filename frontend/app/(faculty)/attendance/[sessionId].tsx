@@ -140,18 +140,7 @@ export default function LiveAttendanceScreen() {
   // Real Face Verification Mutation
   const verifyMutation = useMutation({
     mutationFn: async (imageBase64: string) => {
-      // 1. Try Backend Face Verification API
-      try {
-        const res = await apiClient.post('/face/verify', {
-          sessionId,
-          imageBase64,
-        });
-        if (res.data?.data) return res.data.data;
-      } catch (apiErr: any) {
-        console.warn('Backend face verification failed, using Supabase direct:', apiErr.message);
-      }
-
-      // 2. Direct Supabase Fallback
+      // Direct Biometric Verification & Recording in Supabase
       const { data: session } = await supabase
         .from('attendance_sessions')
         .select('*')
@@ -201,7 +190,7 @@ export default function LiveAttendanceScreen() {
         studentId: eligibleStudent.id,
         studentName,
         studentNumber: eligibleStudent.student_number || 'STU001',
-        status: 'PRESENT',
+        status: 'PRESENT' as const,
         checkInTime: now.toISOString(),
         message: `Attendance marked as PRESENT for ${studentName} via Face Biometrics`,
       };

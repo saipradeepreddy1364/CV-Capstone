@@ -45,7 +45,7 @@ export default function AdminStudentsScreen() {
     mutationFn: async (imageBase64: string) => {
       if (!selectedStudentForFace) throw new Error('No student selected');
 
-      let actualOrgId = orgId && orgId.length > 10 ? orgId : null;
+      let actualOrgId = selectedStudentForFace.organizationId || (orgId && orgId.length > 10 ? orgId : null);
       if (!actualOrgId) {
         const { data: orgs } = await supabase.from('organizations').select('id').limit(1);
         actualOrgId = orgs && orgs.length > 0 && orgs[0].id ? orgs[0].id : '11111111-1111-1111-1111-111111111111';
@@ -61,6 +61,8 @@ export default function AdminStudentsScreen() {
           quality_score: 0.98,
         }
       ], { onConflict: 'student_id' });
+
+      await supabase.from('students').update({ has_face_registered: true }).eq('id', selectedStudentForFace.id);
 
       return { success: true };
     },
@@ -99,7 +101,7 @@ export default function AdminStudentsScreen() {
             const first = s.users?.first_name || '';
             const last = s.users?.last_name || '';
             const fullName = `${first} ${last}`.trim() || s.users?.email || 'Student';
-            const hasFace = Array.isArray(s.face_profiles) ? s.face_profiles.length > 0 : !!s.face_profiles;
+            const hasFace = (Array.isArray(s.face_profiles) ? s.face_profiles.length > 0 : !!s.face_profiles) || !!s.has_face_registered;
             return {
               id: s.id,
               userId: s.user_id,
