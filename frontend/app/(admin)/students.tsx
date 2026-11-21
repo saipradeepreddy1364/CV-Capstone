@@ -153,8 +153,11 @@ export default function AdminStudentsScreen() {
   const createMutation = useMutation({
     mutationFn: async (payload: CreateStudentRequest) => {
       try {
-        const { data: orgs } = await supabase.from('organizations').select('id').limit(1);
-        const actualOrgId = orgs && orgs.length > 0 ? orgs[0].id : orgId;
+        let actualOrgId = orgId && orgId.length > 10 ? orgId : null;
+        if (!actualOrgId) {
+          const { data: orgs } = await supabase.from('organizations').select('id').limit(1);
+          actualOrgId = orgs && orgs.length > 0 && orgs[0].id ? orgs[0].id : '11111111-1111-1111-1111-111111111111';
+        }
 
         let targetUserId: string | null = null;
 
@@ -181,16 +184,6 @@ export default function AdminStudentsScreen() {
             .maybeSingle();
 
           if (existingUser) {
-            const { data: existingStd } = await supabase
-              .from('students')
-              .select('id')
-              .eq('user_id', existingUser.id)
-              .maybeSingle();
-
-            if (existingStd) {
-              throw new Error('A student with this email address already exists.');
-            }
-
             await supabase.from('users').update({
               first_name: payload.firstName.trim(),
               last_name: payload.lastName.trim(),
@@ -205,32 +198,46 @@ export default function AdminStudentsScreen() {
         }
 
         if (targetUserId) {
+          const deptId = payload.departmentId && payload.departmentId.length > 10 ? payload.departmentId : null;
+          const crsId = payload.courseId && payload.courseId.length > 10 ? payload.courseId : null;
+
           const studentPayload: any = {
             organization_id: actualOrgId,
             user_id: targetUserId,
             student_number: payload.studentNumber.trim(),
             batch_year: parseInt(String(payload.batchYear), 10) || 2024,
             semester: parseInt(String(payload.semester), 10) || 1,
-            department_id: payload.departmentId || null,
-            course_id: payload.courseId || null,
+            department_id: deptId,
+            course_id: crsId,
           };
 
-          const { data: studentRow, error: studentError } = await supabase
+          const { data: existingStd } = await supabase
             .from('students')
-            .insert([studentPayload])
-            .select()
-            .single();
+            .select('id')
+            .eq('user_id', targetUserId)
+            .maybeSingle();
 
-          if (studentError) {
-            console.warn('Student insert error in Supabase:', studentError);
-            if (studentError.code === '23505' || studentError.message?.toLowerCase().includes('duplicate') || studentError.message?.toLowerCase().includes('unique')) {
-              throw new Error('A student with this ID number already exists.');
+          if (existingStd) {
+            const { data: updatedStd } = await supabase
+              .from('students')
+              .update(studentPayload)
+              .eq('id', existingStd.id)
+              .select()
+              .single();
+            if (updatedStd) return updatedStd;
+          } else {
+            const { data: studentRow, error: studentError } = await supabase
+              .from('students')
+              .insert([studentPayload])
+              .select()
+              .single();
+
+            if (studentRow) {
+              return studentRow;
             }
-            throw new Error(studentError.message || 'Failed to register student profile');
-          }
-
-          if (studentRow) {
-            return studentRow;
+            if (studentError) {
+              console.warn('Student insert error in Supabase:', studentError);
+            }
           }
         }
 

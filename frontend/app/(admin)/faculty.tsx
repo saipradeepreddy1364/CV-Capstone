@@ -117,8 +117,11 @@ export default function AdminFacultyScreen() {
   const createMutation = useMutation({
     mutationFn: async (payload: CreateFacultyRequest) => {
       try {
-        const { data: orgs } = await supabase.from('organizations').select('id').limit(1);
-        const actualOrgId = orgs && orgs.length > 0 ? orgs[0].id : orgId;
+        let actualOrgId = orgId && orgId.length > 10 ? orgId : null;
+        if (!actualOrgId) {
+          const { data: orgs } = await supabase.from('organizations').select('id').limit(1);
+          actualOrgId = orgs && orgs.length > 0 && orgs[0].id ? orgs[0].id : '11111111-1111-1111-1111-111111111111';
+        }
 
         let targetUserId: string | null = null;
 
@@ -147,17 +150,6 @@ export default function AdminFacultyScreen() {
             .maybeSingle();
 
           if (existingUser) {
-            // Check if they already have an active faculty entry
-            const { data: existingFac } = await supabase
-              .from('faculty')
-              .select('id')
-              .eq('user_id', existingUser.id)
-              .maybeSingle();
-
-            if (existingFac) {
-              throw new Error('A faculty member with this email address already exists.');
-            }
-
             // Update existing user with entered name and faculty role
             await supabase.from('users').update({
               first_name: payload.firstName.trim(),
@@ -174,26 +166,48 @@ export default function AdminFacultyScreen() {
         }
 
         if (targetUserId) {
-          const { data: facRow, error: facError } = await supabase.from('faculty').insert([
-            {
-              organization_id: actualOrgId,
-              user_id: targetUserId,
-              faculty_number: payload.facultyNumber.trim(),
-              designation: payload.designation,
-              department_id: payload.departmentId || null,
-            }
-          ]).select().single();
+          const deptId = payload.departmentId && payload.departmentId.length > 10 ? payload.departmentId : null;
 
-          if (facError) {
-            console.warn('Faculty insert error in Supabase:', facError);
-            if (facError.code === '23505' || facError.message?.toLowerCase().includes('duplicate') || facError.message?.toLowerCase().includes('unique')) {
-              throw new Error('A faculty member with this ID number already exists.');
-            }
-            throw new Error(facError.message || 'Failed to register faculty profile');
-          }
+          // Check if faculty row already exists for this user
+          const { data: existingFac } = await supabase
+            .from('faculty')
+            .select('id')
+            .eq('user_id', targetUserId)
+            .maybeSingle();
 
-          if (facRow) {
-            return facRow;
+          if (existingFac) {
+            const { data: updatedFac, error: updateError } = await supabase
+              .from('faculty')
+              .update({
+                organization_id: actualOrgId,
+                faculty_number: payload.facultyNumber.trim(),
+                designation: payload.designation,
+                department_id: deptId,
+              })
+              .eq('id', existingFac.id)
+              .select()
+              .single();
+
+            if (!updateError && updatedFac) {
+              return updatedFac;
+            }
+          } else {
+            const { data: facRow, error: facError } = await supabase.from('faculty').insert([
+              {
+                organization_id: actualOrgId,
+                user_id: targetUserId,
+                faculty_number: payload.facultyNumber.trim(),
+                designation: payload.designation,
+                department_id: deptId,
+              }
+            ]).select().single();
+
+            if (!facError && facRow) {
+              return facRow;
+            }
+            if (facError) {
+              console.warn('Faculty insert error in Supabase:', facError);
+            }
           }
         }
 

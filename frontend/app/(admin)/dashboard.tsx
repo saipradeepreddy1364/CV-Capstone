@@ -30,28 +30,37 @@ export default function AdminDashboardScreen() {
     queryKey: ['admin_analytics'],
     queryFn: async () => {
       try {
-        // Direct Supabase table queries
-        const [{ count: facultyCount }, { count: studentCount }, { count: deptCount }, { count: courseCount }, { data: records }] = await Promise.all([
-          supabase.from('faculty').select('*', { count: 'exact', head: true }),
-          supabase.from('students').select('*', { count: 'exact', head: true }),
-          supabase.from('departments').select('*', { count: 'exact', head: true }),
-          supabase.from('courses').select('*', { count: 'exact', head: true }),
+        // Direct Supabase table queries - query ids directly for fast, exact live counts
+        const [facRes, stdRes, deptRes, courseRes, sessRes, recRes] = await Promise.all([
+          supabase.from('faculty').select('id'),
+          supabase.from('students').select('id'),
+          supabase.from('departments').select('id'),
+          supabase.from('courses').select('id'),
+          supabase.from('attendance_sessions').select('id, status'),
           supabase.from('attendance_records').select('status'),
         ]);
 
-        const totalRecords = records?.length || 0;
-        const presentCount = records?.filter((r: any) => r.status === 'PRESENT').length || 0;
-        const lateCount = records?.filter((r: any) => r.status === 'LATE').length || 0;
-        const absentCount = records?.filter((r: any) => r.status === 'ABSENT').length || 0;
+        const totalFaculty = facRes.data ? facRes.data.length : 0;
+        const totalStudents = stdRes.data ? stdRes.data.length : 0;
+        const totalDepartments = deptRes.data ? deptRes.data.length : 0;
+        const totalCourses = courseRes.data ? courseRes.data.length : 0;
+        const totalSessionsToday = sessRes.data ? sessRes.data.length : 0;
+        const activeSessionsCount = sessRes.data ? sessRes.data.filter((s: any) => s.status === 'ACTIVE').length : 0;
+
+        const records = recRes.data || [];
+        const totalRecords = records.length;
+        const presentCount = records.filter((r: any) => r.status === 'PRESENT').length;
+        const lateCount = records.filter((r: any) => r.status === 'LATE').length;
+        const absentCount = records.filter((r: any) => r.status === 'ABSENT').length;
         const overallPercentage = totalRecords > 0 ? Math.round(((presentCount + lateCount) / totalRecords) * 100) : 0;
 
         return {
-          totalStudents: studentCount || 0,
-          totalFaculty: facultyCount || 0,
-          totalDepartments: deptCount || 0,
-          totalCourses: courseCount || 0,
-          totalSessionsToday: 0,
-          activeSessionsCount: 0,
+          totalStudents,
+          totalFaculty,
+          totalDepartments,
+          totalCourses,
+          totalSessionsToday,
+          activeSessionsCount,
           overallAttendancePercentage: overallPercentage,
           totalPresent: presentCount,
           totalLate: lateCount,
@@ -61,12 +70,6 @@ export default function AdminDashboardScreen() {
         };
       } catch (e) {
         console.warn('Supabase analytics fetch failed:', e);
-      }
-
-      try {
-        const res = await apiClient.get('/analytics/organization');
-        return res.data.data;
-      } catch {
         return {
           totalStudents: 0,
           totalFaculty: 0,
