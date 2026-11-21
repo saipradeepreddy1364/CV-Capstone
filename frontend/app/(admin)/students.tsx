@@ -44,9 +44,13 @@ export default function AdminStudentsScreen() {
     queryKey: ['admin_students', orgId],
     queryFn: async () => {
       try {
-        const { data, error } = await supabase
+        let q = supabase
           .from('students')
           .select('*, users(first_name, last_name, email), departments(name), courses(name), face_profiles(id)');
+        if (orgId && orgId.length > 10) {
+          q = q.eq('organization_id', orgId);
+        }
+        const { data, error } = await q;
         if (!error && data) {
           return data.map((s: any) => {
             const first = s.users?.first_name || '';

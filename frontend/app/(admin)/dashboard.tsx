@@ -2,6 +2,7 @@ import React from 'react';
 import { View, Text, ScrollView, RefreshControl, TouchableOpacity } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
+import { useAuth } from '../../src/store/authContext';
 import { apiClient } from '../../src/api/client';
 import { supabase } from '../../src/lib/supabase';
 import { OrganizationAnalyticsDto } from '../../src/types';
@@ -25,20 +26,39 @@ import {
 
 export default function AdminDashboardScreen() {
   const router = useRouter();
+  const { user } = useAuth();
+  const orgId = user?.organizationId;
 
   const { data, isLoading, refetch, isRefetching } = useQuery<OrganizationAnalyticsDto>({
-    queryKey: ['admin_analytics'],
+    queryKey: ['admin_analytics', orgId],
     queryFn: async () => {
       try {
-        // Direct Supabase table queries - query ids directly for fast, exact live counts
+        let facQ = supabase.from('faculty').select('id');
+        let stdQ = supabase.from('students').select('id');
+        let deptQ = supabase.from('departments').select('id, name');
+        let courseQ = supabase.from('courses').select('id');
+        let subQ = supabase.from('subjects').select('id');
+        let sessQ = supabase.from('attendance_sessions').select('id, status');
+        let recQ = supabase.from('attendance_records').select('status');
+
+        if (orgId && orgId.length > 10) {
+          facQ = facQ.eq('organization_id', orgId);
+          stdQ = stdQ.eq('organization_id', orgId);
+          deptQ = deptQ.eq('organization_id', orgId);
+          courseQ = courseQ.eq('organization_id', orgId);
+          subQ = subQ.eq('organization_id', orgId);
+          sessQ = sessQ.eq('organization_id', orgId);
+          recQ = recQ.eq('organization_id', orgId);
+        }
+
         const [facRes, stdRes, deptRes, courseRes, subRes, sessRes, recRes] = await Promise.all([
-          supabase.from('faculty').select('id'),
-          supabase.from('students').select('id'),
-          supabase.from('departments').select('id, name'),
-          supabase.from('courses').select('id'),
-          supabase.from('subjects').select('id'),
-          supabase.from('attendance_sessions').select('id, status'),
-          supabase.from('attendance_records').select('status'),
+          facQ,
+          stdQ,
+          deptQ,
+          courseQ,
+          subQ,
+          sessQ,
+          recQ,
         ]);
 
         const totalFaculty = facRes.data ? facRes.data.length : 0;

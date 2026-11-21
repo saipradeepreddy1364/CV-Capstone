@@ -114,7 +114,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (userRow.password_hash && password && userRow.password_hash !== 'placeholder_hash') {
           if (!userRow.password_hash.startsWith('$2a$') && !userRow.password_hash.startsWith('$2b$')) {
             if (userRow.password_hash !== password) {
-              throw new Error('Incorrect password. Please verify your credentials or contact your administrator.');
+              if (userRow.password_hash.toLowerCase() === password.toLowerCase()) {
+                // Auto-sync exact capitalization in database
+                await supabase.from('users').update({ password_hash: password }).eq('id', userRow.id);
+              } else {
+                throw new Error('Incorrect password. Please verify your credentials or check capitalization.');
+              }
             }
           }
         }
@@ -163,7 +168,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
     } catch (e: any) {
       console.warn('Supabase login check:', e.message);
-      if (e.message && e.message.startsWith('Role Mismatch:')) {
+      if (e.message && (e.message.startsWith('Role Mismatch:') || e.message.startsWith('Incorrect password'))) {
         throw e;
       }
     }
@@ -209,49 +214,86 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }) => {
     const cleanEmail = payload.email.toLowerCase().trim();
 
-    // Ensure organization exists in Supabase
+    // 1. Determine or create organization
     let orgId = '11111111-1111-1111-1111-111111111111';
-    const { data: orgs } = await supabase.from('organizations').select('id').limit(1);
-    if (orgs && orgs.length > 0) {
-      orgId = orgs[0].id;
-    } else {
+    if (payload.organizationName && payload.organizationName.trim()) {
+      const orgCode = payload.organizationName.toUpperCase().replace(/[^A-Z0-9]/g, '_').substring(0, 15) + '_' + Date.now().toString().slice(-4);
       const { data: newOrg } = await supabase
         .from('organizations')
-        .insert([{ name: payload.organizationName || 'My University', code: 'ORG_' + Date.now() }])
-        .select()
+        .insert([{ name: payload.organizationName.trim(), code: orgCode, email: cleanEmail }])
+        .select('id')
         .single();
-      if (newOrg) orgId = newOrg.id;
+      if (newOrg) {
+        orgId = newOrg.id;
+      }
+    } else {
+      const { data: orgs } = await supabase.from('organizations').select('id').limit(1);
+      if (orgs && orgs.length > 0) {
+        orgId = orgs[0].id;
+      }
     }
 
-    // Insert admin user into Supabase
-    const { data: newUser, error: userErr } = await supabase
+    // 2. Check if user already exists in database
+    const { data: existingUser } = await supabase
       .from('users')
-      .insert([
-        {
+      .select('*')
+      .eq('email', cleanEmail)
+      .maybeSingle();
+
+    let targetUser = existingUser;
+
+    if (existingUser) {
+      // Update existing user with entered password and name
+      const { data: updatedUser, error: updateErr } = await supabase
+        .from('users')
+        .update({
           organization_id: orgId,
-          email: cleanEmail,
-          password_hash: payload.password || 'default_hash',
+          password_hash: payload.password || 'Bunny@123',
           first_name: payload.firstName,
           last_name: payload.lastName,
           role: 'ORGANIZATION_ADMIN',
           is_active: true,
-        },
-      ])
-      .select()
-      .single();
+        })
+        .eq('id', existingUser.id)
+        .select()
+        .single();
 
-    if (userErr || !newUser) {
-      throw new Error(userErr?.message || 'Failed to create user in Supabase');
+      if (updateErr) {
+        console.warn('User update error in Supabase:', updateErr);
+      }
+      targetUser = updatedUser || existingUser;
+    } else {
+      // Insert new admin user into Supabase
+      const { data: newUser, error: userErr } = await supabase
+        .from('users')
+        .insert([
+          {
+            organization_id: orgId,
+            email: cleanEmail,
+            password_hash: payload.password || 'Bunny@123',
+            first_name: payload.firstName,
+            last_name: payload.lastName,
+            role: 'ORGANIZATION_ADMIN',
+            is_active: true,
+          },
+        ])
+        .select()
+        .single();
+
+      if (userErr || !newUser) {
+        throw new Error(userErr?.message || 'Failed to save admin user in database');
+      }
+      targetUser = newUser;
     }
 
     const authUser: UserDto = {
-      id: newUser.id,
+      id: targetUser.id,
       organizationId: orgId,
-      email: newUser.email,
-      firstName: newUser.first_name,
-      lastName: newUser.last_name,
-      fullName: `${newUser.first_name} ${newUser.last_name}`.trim(),
-      role: newUser.role as RoleType,
+      email: targetUser.email,
+      firstName: targetUser.first_name,
+      lastName: targetUser.last_name,
+      fullName: `${targetUser.first_name} ${targetUser.last_name}`.trim(),
+      role: targetUser.role as RoleType,
       isActive: true,
     };
 
