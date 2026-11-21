@@ -31,11 +31,12 @@ export default function AdminDashboardScreen() {
     queryFn: async () => {
       try {
         // Direct Supabase table queries - query ids directly for fast, exact live counts
-        const [facRes, stdRes, deptRes, courseRes, sessRes, recRes] = await Promise.all([
+        const [facRes, stdRes, deptRes, courseRes, subRes, sessRes, recRes] = await Promise.all([
           supabase.from('faculty').select('id'),
           supabase.from('students').select('id'),
-          supabase.from('departments').select('id'),
+          supabase.from('departments').select('id, name'),
           supabase.from('courses').select('id'),
+          supabase.from('subjects').select('id'),
           supabase.from('attendance_sessions').select('id, status'),
           supabase.from('attendance_records').select('status'),
         ]);
@@ -44,44 +45,62 @@ export default function AdminDashboardScreen() {
         const totalStudents = stdRes.data ? stdRes.data.length : 0;
         const totalDepartments = deptRes.data ? deptRes.data.length : 0;
         const totalCourses = courseRes.data ? courseRes.data.length : 0;
-        const totalSessionsToday = sessRes.data ? sessRes.data.length : 0;
-        const activeSessionsCount = sessRes.data ? sessRes.data.filter((s: any) => s.status === 'ACTIVE').length : 0;
+        const totalSubjects = subRes.data ? subRes.data.length : 0;
+        const todaySessions = sessRes.data ? sessRes.data.length : 0;
 
         const records = recRes.data || [];
         const totalRecords = records.length;
-        const presentCount = records.filter((r: any) => r.status === 'PRESENT').length;
-        const lateCount = records.filter((r: any) => r.status === 'LATE').length;
-        const absentCount = records.filter((r: any) => r.status === 'ABSENT').length;
-        const overallPercentage = totalRecords > 0 ? Math.round(((presentCount + lateCount) / totalRecords) * 100) : 0;
+        const presentToday = records.filter((r: any) => r.status === 'PRESENT').length;
+        const lateToday = records.filter((r: any) => r.status === 'LATE').length;
+        const absentToday = records.filter((r: any) => r.status === 'ABSENT').length;
+        const averageAttendancePercentage = totalRecords > 0 ? Math.round(((presentToday + lateToday) / totalRecords) * 100) : 0;
+
+        const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+        const today = new Date();
+        const weeklyTrends = Array.from({ length: 7 }, (_, i) => {
+          const d = new Date(today);
+          d.setDate(d.getDate() - (6 - i));
+          return {
+            date: d.toISOString().split('T')[0],
+            day: days[d.getDay()],
+            present: i === 6 ? presentToday : 0,
+            absent: i === 6 ? absentToday : 0,
+          };
+        });
+
+        const departmentStats = (deptRes.data || []).map((d: any) => ({
+          name: d.name || 'Department',
+          students: 0,
+        }));
 
         return {
-          totalStudents,
           totalFaculty,
+          totalStudents,
           totalDepartments,
           totalCourses,
-          totalSessionsToday,
-          activeSessionsCount,
-          overallAttendancePercentage: overallPercentage,
-          totalPresent: presentCount,
-          totalLate: lateCount,
-          totalAbsent: absentCount,
-          recentSessions: [],
-          departmentStats: [],
+          totalSubjects,
+          todaySessions,
+          presentToday,
+          absentToday,
+          lateToday,
+          averageAttendancePercentage,
+          weeklyTrends,
+          departmentStats,
         };
       } catch (e) {
         console.warn('Supabase analytics fetch failed:', e);
         return {
-          totalStudents: 0,
           totalFaculty: 0,
+          totalStudents: 0,
           totalDepartments: 0,
           totalCourses: 0,
-          totalSessionsToday: 0,
-          activeSessionsCount: 0,
-          overallAttendancePercentage: 0,
-          totalPresent: 0,
-          totalLate: 0,
-          totalAbsent: 0,
-          recentSessions: [],
+          totalSubjects: 0,
+          todaySessions: 0,
+          presentToday: 0,
+          absentToday: 0,
+          lateToday: 0,
+          averageAttendancePercentage: 0,
+          weeklyTrends: [],
           departmentStats: [],
         };
       }
