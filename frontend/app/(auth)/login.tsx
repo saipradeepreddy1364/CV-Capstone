@@ -184,50 +184,7 @@ export default function LoginScreen() {
             </TouchableOpacity>
           </View>
 
-          {/* Mode Description Banner */}
-          {!isRegisterMode ? (
-            <View
-              style={{
-                backgroundColor: 'rgba(99, 102, 241, 0.08)',
-                borderWidth: 1,
-                borderColor: '#334155',
-                borderRadius: 10,
-                padding: 12,
-                marginBottom: 20,
-              }}
-            >
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-                <Building2 size={14} color="#818cf8" />
-                <Text style={{ color: '#818cf8', fontSize: 11, fontWeight: '800', letterSpacing: 0.5 }}>
-                  UNIVERSAL ROLE-BASED LOGIN
-                </Text>
-              </View>
-              <Text style={{ color: '#cbd5e1', fontSize: 12, lineHeight: 17 }}>
-                Enter your registered email and password. Your role (Administrator, Faculty, or Student) will be detected automatically and you will be routed to your respective dashboard.
-              </Text>
-            </View>
-          ) : (
-            <View
-              style={{
-                backgroundColor: 'rgba(16, 185, 129, 0.08)',
-                borderWidth: 1,
-                borderColor: 'rgba(16, 185, 129, 0.3)',
-                borderRadius: 10,
-                padding: 12,
-                marginBottom: 20,
-              }}
-            >
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-                <Building2 size={14} color="#34d399" />
-                <Text style={{ color: '#34d399', fontSize: 11, fontWeight: '800', letterSpacing: 0.5 }}>
-                  INSTITUTION ADMIN REGISTRATION
-                </Text>
-              </View>
-              <Text style={{ color: '#cbd5e1', fontSize: 12, lineHeight: 17 }}>
-                Create a new institution administrator account. Faculty and Student accounts can only be added later by the administrator from inside the Admin Dashboard.
-              </Text>
-            </View>
-          )}
+
 
           {errorMessage && (
             <View
