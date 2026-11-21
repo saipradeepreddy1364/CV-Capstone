@@ -8,6 +8,7 @@ import {
   TextInput,
   RefreshControl,
   Alert,
+  Platform,
 } from 'react-native';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '../../src/api/client';
@@ -271,9 +272,17 @@ export default function AdminStudentsScreen() {
     mutationFn: async (id: string) => {
       try {
         const { data: std } = await supabase.from('students').select('user_id').eq('id', id).maybeSingle();
-        await supabase.from('students').delete().eq('id', id);
+        // Delete referencing face profiles, attendance records, enrollments
+        await supabase.from('face_profiles').delete().eq('student_id', id);
+        await supabase.from('attendance_records').delete().eq('student_id', id);
+        await supabase.from('enrollments').delete().eq('student_id', id);
+
+        const { error: stdError } = await supabase.from('students').delete().eq('id', id);
+        if (stdError) console.warn('Supabase delete student error:', stdError);
+
         if (std?.user_id) {
-          await supabase.from('users').delete().eq('id', std.user_id);
+          const { error: userError } = await supabase.from('users').delete().eq('id', std.user_id);
+          if (userError) console.warn('Supabase delete user error:', userError);
         }
       } catch (e) {
         console.warn('Supabase delete student error:', e);
@@ -287,9 +296,30 @@ export default function AdminStudentsScreen() {
       queryClient.invalidateQueries({ queryKey: ['admin_analytics'] });
     },
     onError: (err: any) => {
-      Alert.alert('Error', err.response?.data?.message || err.message || 'Failed to delete student');
+      if (Platform.OS === 'web') {
+        window.alert(err.response?.data?.message || err.message || 'Failed to delete student');
+      } else {
+        Alert.alert('Error', err.response?.data?.message || err.message || 'Failed to delete student');
+      }
     },
   });
+
+  const confirmDeleteStudent = (id: string, name: string) => {
+    if (Platform.OS === 'web') {
+      if (typeof window !== 'undefined' && window.confirm) {
+        if (window.confirm(`Are you sure you want to delete ${name}?`)) {
+          deleteMutation.mutate(id);
+        }
+      } else {
+        deleteMutation.mutate(id);
+      }
+    } else {
+      Alert.alert('Delete Student', `Are you sure you want to delete ${name}?`, [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Delete', style: 'destructive', onPress: () => deleteMutation.mutate(id) },
+      ]);
+    }
+  };
 
   const resetForm = () => {
     setFirstName('');
@@ -409,12 +439,7 @@ export default function AdminStudentsScreen() {
                 </View>
 
                 <TouchableOpacity
-                  onPress={() => {
-                    Alert.alert('Delete Student', `Delete ${item.fullName || item.email || 'this student'}?`, [
-                      { text: 'Cancel', style: 'cancel' },
-                      { text: 'Delete', style: 'destructive', onPress: () => deleteMutation.mutate(item.id) },
-                    ]);
-                  }}
+                  onPress={() => confirmDeleteStudent(item.id, item.fullName || item.email || 'this student')}
                   style={{
                     padding: 8,
                     backgroundColor: 'rgba(239, 68, 68, 0.15)',

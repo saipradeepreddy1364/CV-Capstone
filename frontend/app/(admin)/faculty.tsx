@@ -8,6 +8,7 @@ import {
   TextInput,
   RefreshControl,
   Alert,
+  Platform,
 } from 'react-native';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '../../src/api/client';
@@ -241,9 +242,17 @@ export default function AdminFacultyScreen() {
     mutationFn: async (id: string) => {
       try {
         const { data: fac } = await supabase.from('faculty').select('user_id').eq('id', id).maybeSingle();
-        await supabase.from('faculty').delete().eq('id', id);
+        // Remove referencing rows first to ensure clean cascade
+        await supabase.from('attendance_records').delete().eq('faculty_id', id);
+        await supabase.from('attendance_sessions').delete().eq('faculty_id', id);
+        await supabase.from('enrollments').delete().eq('faculty_id', id);
+
+        const { error: facError } = await supabase.from('faculty').delete().eq('id', id);
+        if (facError) console.warn('Supabase delete faculty error:', facError);
+
         if (fac?.user_id) {
-          await supabase.from('users').delete().eq('id', fac.user_id);
+          const { error: userError } = await supabase.from('users').delete().eq('id', fac.user_id);
+          if (userError) console.warn('Supabase delete user error:', userError);
         }
       } catch (e) {
         console.warn('Supabase delete error:', e);
@@ -257,9 +266,30 @@ export default function AdminFacultyScreen() {
       queryClient.invalidateQueries({ queryKey: ['admin_analytics'] });
     },
     onError: (err: any) => {
-      Alert.alert('Error', err.response?.data?.message || err.message || 'Failed to delete faculty');
+      if (Platform.OS === 'web') {
+        window.alert(err.response?.data?.message || err.message || 'Failed to delete faculty');
+      } else {
+        Alert.alert('Error', err.response?.data?.message || err.message || 'Failed to delete faculty');
+      }
     },
   });
+
+  const confirmDeleteFaculty = (id: string, name: string) => {
+    if (Platform.OS === 'web') {
+      if (typeof window !== 'undefined' && window.confirm) {
+        if (window.confirm(`Are you sure you want to delete ${name}?`)) {
+          deleteMutation.mutate(id);
+        }
+      } else {
+        deleteMutation.mutate(id);
+      }
+    } else {
+      Alert.alert('Delete Faculty', `Delete ${name}?`, [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Delete', style: 'destructive', onPress: () => deleteMutation.mutate(id) },
+      ]);
+    }
+  };
 
   const resetForm = () => {
     setFirstName('');
@@ -364,12 +394,7 @@ export default function AdminFacultyScreen() {
                 </View>
 
                 <TouchableOpacity
-                  onPress={() => {
-                    Alert.alert('Delete Faculty', `Delete ${item.fullName || item.email || 'this faculty member'}?`, [
-                      { text: 'Cancel', style: 'cancel' },
-                      { text: 'Delete', style: 'destructive', onPress: () => deleteMutation.mutate(item.id) },
-                    ]);
-                  }}
+                  onPress={() => confirmDeleteFaculty(item.id, item.fullName || item.email || 'this faculty member')}
                   style={{
                     padding: 8,
                     backgroundColor: 'rgba(239, 68, 68, 0.15)',
