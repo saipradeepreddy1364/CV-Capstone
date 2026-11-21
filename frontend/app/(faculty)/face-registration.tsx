@@ -81,11 +81,6 @@ export default function FacultyFaceRegistrationScreen() {
           }
         ], { onConflict: 'student_id' });
 
-        await supabase
-          .from('students')
-          .update({ has_face_registered: true })
-          .eq('id', selectedStudent.id);
-
         return { success: true };
       } catch (e) {
         console.warn('Supabase face save warning:', e);

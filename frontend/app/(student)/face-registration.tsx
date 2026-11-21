@@ -81,12 +81,6 @@ export default function StudentFaceRegistrationScreen() {
           }
         ], { onConflict: 'student_id' });
 
-        // Mark student as having face registered
-        await supabase
-          .from('students')
-          .update({ has_face_registered: true })
-          .eq('id', actualStudentId);
-
         return { success: true };
       } catch (e) {
         console.warn('Supabase face registration failed:', e);
