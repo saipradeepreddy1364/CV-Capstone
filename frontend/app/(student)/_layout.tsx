@@ -40,8 +40,7 @@ export default function StudentLayout() {
       <Tabs.Screen
         name="face-registration"
         options={{
-          title: 'My Face ID',
-          tabBarIcon: ({ color, size }) => <Camera size={size} color={color} />,
+          href: null,
         }}
       />
       <Tabs.Screen

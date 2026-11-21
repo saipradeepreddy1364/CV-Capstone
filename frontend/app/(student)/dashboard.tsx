@@ -157,19 +157,12 @@ export default function StudentDashboardScreen() {
         </View>
 
         {/* Quick Links */}
-        <View style={{ flexDirection: 'row', gap: 10, marginBottom: 20 }}>
+        <View style={{ marginBottom: 20 }}>
           <Button
             title="View Attendance Calendar"
             onPress={() => router.push('/(student)/attendance/calendar')}
             icon={<Calendar size={16} color="#ffffff" />}
-            style={{ flex: 1 }}
-          />
-          <Button
-            title="Face ID Profile"
-            onPress={() => router.push('/(student)/face-registration')}
-            variant="outline"
-            icon={<Camera size={16} color="#818cf8" />}
-            style={{ flex: 1 }}
+            style={{ width: '100%' }}
           />
         </View>
 
